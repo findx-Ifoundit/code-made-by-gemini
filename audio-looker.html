@@ -25,11 +25,6 @@
             下のボタンを押して、システムオーディオの共有を許可してください。ブラウザのプロンプトで必ず「オーディオの共有」を有効にしてください。
         </p>
 
-        <!-- ユーザーID表示エリア (Firebase用) -->
-        <div id="auth-status" class="text-sm text-center mb-4 p-2 bg-blue-100 rounded-lg">
-            認証中...
-        </div>
-
         <div class="flex flex-col items-center space-y-4">
             <!-- 制御ボタン -->
             <button id="startButton" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300 transform hover:scale-105 disabled:opacity-50">
@@ -46,73 +41,7 @@
             <canvas id="frequencyCanvas" width="800" height="300" class="frequency-canvas w-full"></canvas>
         </div>
 
-        <!-- ライブラリのインポート (Firebase) -->
-        <script type="module">
-            import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-            import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-            import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-            import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-            setLogLevel('Debug');
-
-            // グローバル変数の設定（Canvas環境から提供されるものを優先）
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'audio-analyzer-app-default';
-            let firebaseConfig = null;
-            try {
-                firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-            } catch (e) {
-                console.error("Failed to parse __firebase_config:", e);
-                firebaseConfig = null;
-            }
-            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-            let db, auth, userId = 'loading';
-
-            // Firebase初期化
-            if (firebaseConfig) {
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                // 認証ロジック
-                const authenticate = async () => {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                            console.log("Signed in with custom token.");
-                        } else {
-                            await signInAnonymously(auth);
-                            console.log("Signed in anonymously.");
-                        }
-                    } catch (error) {
-                        console.error("Firebase Auth Error:", error);
-                    }
-                };
-
-                // 認証状態の監視
-                onAuthStateChanged(auth, (user) => {
-                    const authStatusDiv = document.getElementById('auth-status');
-                    if (user) {
-                        userId = user.uid;
-                        authStatusDiv.innerHTML = `✅ 認証完了 | ユーザーID: <code class="bg-blue-200 p-1 rounded">${userId}</code>`;
-                        
-                        // ログイン情報をFirestoreに保存（オプション）
-                        const userRef = doc(db, 'artifacts', appId, 'users', userId, 'settings', 'profile');
-                        setDoc(userRef, { lastLogin: new Date().toISOString() }, { merge: true }).catch(e => console.error("Firestore write error:", e));
-
-                    } else {
-                        userId = 'unauthenticated_' + crypto.randomUUID();
-                        authStatusDiv.textContent = `⚠️ 認証エラー: 匿名サインインを試行中...`;
-                    }
-                });
-
-                authenticate();
-            } else {
-                console.error("Firebase config is missing. Running without persistent storage.");
-                document.getElementById('auth-status').textContent = '⚠️ Firebaseが利用できません。';
-                userId = 'local_' + crypto.randomUUID();
-            }
-
+        <script>
             // --- オーディオアナライザーのロジック ---
 
             const canvas = document.getElementById('frequencyCanvas');
@@ -192,6 +121,7 @@
                     messageDiv.textContent = '✅ システムオーディオを取得しました。リアルタイム分析中...';
 
                     // AudioContextの初期化
+                    // ユーザー操作 (ボタンクリック) の後に初期化することが重要
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     
                     // AnalyserNodeの作成
@@ -202,9 +132,8 @@
                     // MediaStreamSourceノードの作成
                     const source = audioContext.createMediaStreamSource(mediaStream);
 
-                    // ノードの接続: ソース -> アナライザー -> 最終的な出力(今回は接続しない)
+                    // ノードの接続: ソース -> アナライザー
                     source.connect(analyser);
-                    // analyser.connect(audioContext.destination); // スピーカーへの出力は不要
 
                     // 描画ループの開始
                     draw();
@@ -242,6 +171,7 @@
                     mediaStream = null;
                 }
                 if (audioContext) {
+                    // AudioContextを閉じる
                     audioContext.close().catch(e => console.error("AudioContext close error:", e));
                     audioContext = null;
                     analyser = null;
@@ -262,9 +192,10 @@
             // 画面サイズ変更時にCanvasをリサイズする処理
             function resizeCanvas() {
                 const container = document.getElementById('frequencyCanvas').parentElement;
+                // コンテナの幅に合わせてCanvasのサイズを調整
                 const width = container.clientWidth;
                 canvas.width = width;
-                canvas.height = width * 0.375; // 800x300に近いアスペクト比
+                canvas.height = width * 0.375; // 約 800x300 のアスペクト比を維持
             }
 
             // 初期ロード時とリサイズ時にCanvasサイズを設定
