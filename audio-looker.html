@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム・オーディオ・アナライザー</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* カスタムスタイル */
+        .frequency-canvas {
+            background-color: #1f2937; /* Dark gray background */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            border-radius: 0.75rem; /* rounded-xl */
+        }
+        .container {
+            max-width: 90%;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 font-sans">
+    <div class="container mx-auto p-6 bg-white shadow-2xl rounded-2xl w-full max-w-4xl">
+        <h1 class="text-3xl font-bold text-gray-800 mb-4 text-center">システムオーディオ・周波数アナライザー</h1>
+        <p class="text-gray-600 mb-6 text-center">
+            下のボタンを押して、システムオーディオの共有を許可してください。ブラウザのプロンプトで必ず「オーディオの共有」を有効にしてください。
+        </p>
+
+        <!-- ユーザーID表示エリア (Firebase用) -->
+        <div id="auth-status" class="text-sm text-center mb-4 p-2 bg-blue-100 rounded-lg">
+            認証中...
+        </div>
+
+        <div class="flex flex-col items-center space-y-4">
+            <!-- 制御ボタン -->
+            <button id="startButton" class="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 transition duration-300 transform hover:scale-105 disabled:opacity-50">
+                🚀 システムオーディオ共有＆分析開始
+            </button>
+            <button id="stopButton" class="px-6 py-3 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-300 transform hover:scale-105 disabled:opacity-50" disabled>
+                ⏹️ 分析停止
+            </button>
+
+            <!-- メッセージ表示エリア -->
+            <div id="message" class="text-orange-500 font-medium h-6"></div>
+
+            <!-- グラフ描画エリア -->
+            <canvas id="frequencyCanvas" width="800" height="300" class="frequency-canvas w-full"></canvas>
+        </div>
+
+        <!-- ライブラリのインポート (Firebase) -->
+        <script type="module">
+            import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+            import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+            import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+            import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+            setLogLevel('Debug');
+
+            // グローバル変数の設定（Canvas環境から提供されるものを優先）
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'audio-analyzer-app-default';
+            let firebaseConfig = null;
+            try {
+                firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+            } catch (e) {
+                console.error("Failed to parse __firebase_config:", e);
+                firebaseConfig = null;
+            }
+            const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+            let db, auth, userId = 'loading';
+
+            // Firebase初期化
+            if (firebaseConfig) {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // 認証ロジック
+                const authenticate = async () => {
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                            console.log("Signed in with custom token.");
+                        } else {
+                            await signInAnonymously(auth);
+                            console.log("Signed in anonymously.");
+                        }
+                    } catch (error) {
+                        console.error("Firebase Auth Error:", error);
+                    }
+                };
+
+                // 認証状態の監視
+                onAuthStateChanged(auth, (user) => {
+                    const authStatusDiv = document.getElementById('auth-status');
+                    if (user) {
+                        userId = user.uid;
+                        authStatusDiv.innerHTML = `✅ 認証完了 | ユーザーID: <code class="bg-blue-200 p-1 rounded">${userId}</code>`;
+                        
+                        // ログイン情報をFirestoreに保存（オプション）
+                        const userRef = doc(db, 'artifacts', appId, 'users', userId, 'settings', 'profile');
+                        setDoc(userRef, { lastLogin: new Date().toISOString() }, { merge: true }).catch(e => console.error("Firestore write error:", e));
+
+                    } else {
+                        userId = 'unauthenticated_' + crypto.randomUUID();
+                        authStatusDiv.textContent = `⚠️ 認証エラー: 匿名サインインを試行中...`;
+                    }
+                });
+
+                authenticate();
+            } else {
+                console.error("Firebase config is missing. Running without persistent storage.");
+                document.getElementById('auth-status').textContent = '⚠️ Firebaseが利用できません。';
+                userId = 'local_' + crypto.randomUUID();
+            }
+
+            // --- オーディオアナライザーのロジック ---
+
+            const canvas = document.getElementById('frequencyCanvas');
+            const ctx = canvas.getContext('2d');
+            const startButton = document.getElementById('startButton');
+            const stopButton = document.getElementById('stopButton');
+            const messageDiv = document.getElementById('message');
+
+            let audioContext = null;
+            let analyser = null;
+            let mediaStream = null;
+            let animationId = null;
+
+            // 周波数データを描画する関数
+            function draw() {
+                if (!analyser) return;
+
+                animationId = requestAnimationFrame(draw);
+
+                // 周波数データの配列を準備
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                analyser.getByteFrequencyData(dataArray);
+
+                // Canvasをクリア
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // バーのスタイル設定
+                const barWidth = (canvas.width / bufferLength) * 2.5; // 少し間隔を開けるために調整
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    const barHeight = dataArray[i] * 1.5; // 高さを調整して見やすくする
+
+                    // 周波数に応じたグラデーションカラーを設定 (青 -> 緑 -> 黄 -> 赤)
+                    let hue = i / bufferLength * 360; // 0 (Low) to 360 (High)
+                    ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+
+                    // バーを描画 (下から上へ)
+                    ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+                    x += barWidth + 1; // バーとバーの間に1pxのスペース
+                }
+            }
+
+            // オーディオストリームの取得と分析開始
+            async function startAnalysis() {
+                if (audioContext && audioContext.state === 'running') {
+                    messageDiv.textContent = '分析はすでに実行中です。';
+                    return;
+                }
+
+                messageDiv.textContent = 'ブラウザのプロンプトで「オーディオを共有」を選択してください...';
+                startButton.disabled = true;
+                stopButton.disabled = true;
+
+                try {
+                    // getDisplayMedia() を使用して、システムオーディオを含むストリームを取得
+                    // audio: true, video: true (画面選択のための設定)
+                    mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true, // 画面選択ダイアログを表示するため
+                        audio: {
+                            sampleRate: 44100, // 高品質なオーディオサンプリング
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
+                        }
+                    });
+
+                    // ユーザーがオーディオを含めずに共有した場合のチェック
+                    if (!mediaStream.getAudioTracks().length) {
+                        messageDiv.textContent = '⚠️ システムオーディオが共有されていません。もう一度試して、プロンプトでオーディオを有効にしてください。';
+                        stopAnalysis();
+                        return;
+                    }
+
+                    messageDiv.textContent = '✅ システムオーディオを取得しました。リアルタイム分析中...';
+
+                    // AudioContextの初期化
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // AnalyserNodeの作成
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 2048; // FFTサイズ (周波数分解能に影響)
+                    analyser.smoothingTimeConstant = 0.7; // 滑らかさの調整 (0:生データ, 1:最大平滑化)
+
+                    // MediaStreamSourceノードの作成
+                    const source = audioContext.createMediaStreamSource(mediaStream);
+
+                    // ノードの接続: ソース -> アナライザー -> 最終的な出力(今回は接続しない)
+                    source.connect(analyser);
+                    // analyser.connect(audioContext.destination); // スピーカーへの出力は不要
+
+                    // 描画ループの開始
+                    draw();
+
+                    stopButton.disabled = false;
+
+                    // ユーザーが共有を停止した際の処理
+                    mediaStream.getVideoTracks()[0].onended = () => {
+                        stopAnalysis();
+                        messageDiv.textContent = 'セッションが終了しました。';
+                    };
+
+                } catch (err) {
+                    console.error('オーディオ取得エラー:', err);
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        messageDiv.textContent = '🚫 ユーザーが許可を拒否しました。';
+                    } else {
+                        messageDiv.textContent = '❌ オーディオストリームの取得中にエラーが発生しました。';
+                    }
+                    stopAnalysis(); // エラー時は停止処理を呼ぶ
+                }
+                
+                // 停止ボタンが押された後、開始ボタンを再び有効にするために、try/catchの後に設定
+                startButton.disabled = false;
+            }
+
+            // 分析の停止とリソースの解放
+            function stopAnalysis() {
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                    mediaStream = null;
+                }
+                if (audioContext) {
+                    audioContext.close().catch(e => console.error("AudioContext close error:", e));
+                    audioContext = null;
+                    analyser = null;
+                }
+                
+                // Canvasをクリア
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                messageDiv.textContent = '分析を停止しました。';
+                startButton.disabled = false;
+                stopButton.disabled = true;
+            }
+
+            // イベントリスナーの設定
+            startButton.addEventListener('click', startAnalysis);
+            stopButton.addEventListener('click', stopAnalysis);
+
+            // 画面サイズ変更時にCanvasをリサイズする処理
+            function resizeCanvas() {
+                const container = document.getElementById('frequencyCanvas').parentElement;
+                const width = container.clientWidth;
+                canvas.width = width;
+                canvas.height = width * 0.375; // 800x300に近いアスペクト比
+            }
+
+            // 初期ロード時とリサイズ時にCanvasサイズを設定
+            window.onload = () => {
+                resizeCanvas();
+            };
+            window.addEventListener('resize', resizeCanvas);
+
+        </script>
+    </div>
+</body>
+</html>
