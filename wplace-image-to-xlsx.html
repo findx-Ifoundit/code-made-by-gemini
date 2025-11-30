@@ -30,7 +30,7 @@
             <h1 class="text-3xl font-bold text-gray-900 mb-2">Wplace Color Palette XLSX コンバーター</h1>
             <p class="text-gray-600">画像をアップロードし、ピクセル単位のカラー情報をExcelファイルとして出力します。（縮小処理なし）</p>
             <p class="text-sm font-semibold text-red-500 mt-2 p-2 bg-red-50 rounded-lg shadow-sm">
-                【注意】大きな画像をアップロードすると処理に時間がかかり、フリーズする可能性があります。
+                【注意】大きな画像（特に数メガピクセルを超えるもの）を処理すると、ブラウザがフリーズしたりクラッシュしたりする可能性が非常に高くなります。
             </p>
         </header>
 
@@ -114,7 +114,8 @@
             const r = parseInt(hex.substring(1, 7).substring(0, 2), 16);
             const g = parseInt(hex.substring(1, 7).substring(2, 4), 16);
             const b = parseInt(hex.substring(1, 7).substring(4, 6), 16);
-            return { r, g, b, hex: hex.substring(1).toUpperCase(), name: data.name, rank: data.rank }; // HexをRRGGBB形式で保存
+            // SheetJSのスタイル設定のために、#なしのRRGGBB形式に変換
+            return { r, g, b, hex: hex.substring(1).toUpperCase(), name: data.name, rank: data.rank }; 
         });
 
         // DOM要素の取得と一時的なデータ保存用変数
@@ -182,15 +183,33 @@
         processButton.addEventListener('click', () => {
             const file = imageUpload.files[0];
             if (!file) {
-                showMessage('画像をアップロードしてください。', 'error');
+                // カスタムモーダルメッセージを表示
+                showMessage('画像をアップロードしてください。', 'error'); 
                 return;
             }
             processImage(file);
         });
 
+        // ダウンロードボタンのイベントリスナーを修正
         downloadButton.addEventListener('click', () => {
             if (processedDataForXLSX.length > 0) {
-                downloadXLSX();
+                // ダウンロード開始時の視覚的フィードバックをすぐに実行
+                showMessage('Excelファイルの生成を開始します。しばらくお待ちください...', 'info-long');
+                downloadButton.disabled = true;
+                
+                // 重い処理をsetTimeoutでラップし、UIスレッドが更新される時間を与える
+                // これにより、フリーズする前に「処理中...」メッセージを表示する機会が生まれる
+                setTimeout(() => {
+                    try {
+                        // 同期で重いダウンロード処理を実行
+                        downloadXLSX();
+                    } catch(e) {
+                        console.error("XLSX Download Error:", e);
+                        showMessage('Excelファイル生成中に重大なエラーが発生しました。ファイルサイズが大きすぎる可能性があります。', 'error');
+                    } finally {
+                        downloadButton.disabled = false;
+                    }
+                }, 100); // 100ms待機
             } else {
                 showMessage('ダウンロードするデータがありません。先に画像を処理してください。', 'error');
             }
@@ -198,7 +217,14 @@
         
         // エラーやステータスメッセージの表示
         function showMessage(message, type = 'info') {
-            const className = type === 'error' ? 'text-red-600 bg-red-100' : 'text-gray-600 bg-gray-100';
+            let className = 'text-gray-600 bg-gray-100';
+            if (type === 'error') {
+                className = 'text-red-600 bg-red-100';
+            } else if (type === 'info-long') {
+                // ダウンロード開始時のフィードバックを強調
+                className = 'text-blue-700 bg-blue-100 font-semibold';
+            }
+
             statusArea.innerHTML = `<p class="p-4 rounded-lg ${className}">${message}</p>`;
             placeholderText.classList.add('hidden');
             downloadSection.classList.add('hidden');
@@ -237,7 +263,7 @@
                         
                         const rows = [];
 
-                        // 各ピクセルを処理し、XLSXのセルオブジェクトを生成
+                        // 3. 各ピクセルを処理し、XLSXのセルオブジェクトを生成 (ここは同期処理だが、Canvasからのデータ取得後に実行)
                         for (let y = 0; y < height; y++) {
                             const row = [];
                             for (let x = 0; x < width; x++) {
@@ -255,7 +281,8 @@
                                 // SheetJSのスタイル設定
                                 const cellStyle = {
                                     fill: { fgColor: { rgb: closestColor.hex } },
-                                    font: { color: { rgb: textColor }, bold: true, name: 'Inter', sz: 8 },
+                                    // フォントサイズを最小化 (6) 
+                                    font: { color: { rgb: textColor }, bold: true, name: 'Inter', sz: 6 },
                                     alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
                                     border: {}
                                 };
@@ -311,7 +338,7 @@
         }
 
         /**
-         * 処理済みデータからXLSXファイルを生成してダウンロードする
+         * 処理済みデータからXLSXファイルを生成してダウンロードする (同期処理)
          */
         function downloadXLSX() {
             if (typeof XLSX === 'undefined') {
@@ -325,23 +352,20 @@
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet(processedDataForXLSX);
 
-            // セル幅の調整: 各カラムをピクセル幅に合わせて微調整
-            const defaultColWidth = width > 100 ? 1 : (width > 50 ? 2 : 5);
-            ws['!cols'] = Array(width).fill({ wch: defaultColWidth }); 
+            // セル幅と行高の調整
+            // 小さな値に設定し、ピクセルアート風の見た目を再現
+            const colWidth = 1.2; 
+            const rowHeight = 6; // ポイント単位
 
-            // 行高の調整: 各行をピクセル高さに合わせて微調整
-            const defaultRowHeight = height > 100 ? 5 : (height > 50 ? 10 : 20);
-            ws['!rows'] = Array(height).fill({ hpt: defaultRowHeight });
+            ws['!cols'] = Array(width).fill({ wch: colWidth }); 
+            ws['!rows'] = Array(height).fill({ hpt: rowHeight });
             
-            // XLSXにスタイルを適用するためには、ワークブックのオプションで`cellStyles: true`が必要
-            // SheetJSはaoa_to_sheetに渡された配列内のオブジェクト（v, sを持つ）を認識する
-
             XLSX.utils.book_append_sheet(wb, ws, "Wplace_Pixel_Art");
 
-            // ファイル名を設定してダウンロード
+            // 同期で重いファイル書き出し処理を実行
             XLSX.writeFile(wb, "Wplace_Pixel_Art_" + Date.now() + ".xlsx", { cellStyles: true });
 
-            showMessage('ダウンロードを開始しました。', 'info');
+            showMessage('ダウンロードが完了しました。', 'info');
         }
 
     </script>
