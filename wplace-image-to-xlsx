@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wplaceカラーパレット XLSXダウンロード</title>
+    <!-- Tailwind CSSの読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJSの読み込み (Excelファイル生成用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        /* カスタムスタイル */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+        }
+
+        /* 処理中のオーバーレイ */
+        #loading-overlay {
+            background-color: rgba(255, 255, 255, 0.8);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-10">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Wplace Color Palette XLSX コンバーター</h1>
+            <p class="text-gray-600">画像をアップロードし、ピクセル単位のカラー情報をExcelファイルとして出力します。（縮小処理なし）</p>
+            <p class="text-sm font-semibold text-red-500 mt-2 p-2 bg-red-50 rounded-lg shadow-sm">
+                【注意】大きな画像をアップロードすると処理に時間がかかり、フリーズする可能性があります。
+            </p>
+        </header>
+
+        <!-- 画像アップロードとボタンエリア -->
+        <div class="bg-white p-6 rounded-xl shadow-lg mb-8">
+            <label for="imageUpload" class="block text-sm font-medium text-gray-700 mb-4">画像をアップロード</label>
+            <input type="file" id="imageUpload" accept="image/*" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 transition duration-150">
+            
+            <button id="processButton" class="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-xl transition duration-150 shadow-md disabled:bg-indigo-300" disabled>
+                画像を処理してダウンロード準備
+            </button>
+        </div>
+
+        <!-- 結果表示とダウンロードエリア -->
+        <div class="relative bg-white p-6 rounded-xl shadow-lg min-h-[100px]">
+            <h2 class="text-xl font-semibold text-gray-900 mb-4">ダウンロード</h2>
+
+            <!-- ローディングオーバーレイ -->
+            <div id="loading-overlay" class="absolute inset-0 flex flex-col items-center justify-center hidden rounded-xl">
+                <div class="animate-spin rounded-full h-12 w-12 border-4 border-t-4 border-indigo-500 border-opacity-50"></div>
+                <p class="mt-3 text-lg text-indigo-700 font-semibold">画像を処理中です...</p>
+                <p class="text-sm text-gray-600">（画像サイズによっては、非常に時間がかかる可能性があります）</p>
+            </div>
+            
+            <div id="status-area">
+                <p id="placeholder-text" class="text-center text-gray-500 p-4">画像をアップロードして「画像を処理してダウンロード準備」ボタンを押してください。</p>
+            </div>
+
+            <div id="download-section" class="hidden text-center mt-6 p-4 border border-green-200 bg-green-50 rounded-lg">
+                <p id="image-info" class="text-sm text-gray-700 mb-3 font-medium"></p>
+                <button id="downloadButton" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-xl transition duration-150 shadow-md flex items-center justify-center mx-auto">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    XLSXファイルをダウンロード
+                </button>
+            </div>
+        </div>
+
+        <!-- 処理用Canvas (非表示) -->
+        <canvas id="processingCanvas" class="hidden"></canvas>
+    </div>
+
+    <script>
+        // Wplace Color Palette データ
+        const WPLACE_PALETTE = {
+            "#000000": { "name": "Black", "rank": "Normal" }, "#3c3c3c": { "name": "Dark Gray", "rank": "Normal" },
+            "#787878": { "name": "Gray", "rank": "Normal" }, "#d2d2d2": { "name": "Light Gray", "rank": "Normal" },
+            "#ffffff": { "name": "White", "rank": "Normal" }, "#600018": { "name": "Deep Red", "rank": "Normal" },
+            "#ed1c24": { "name": "Red", "rank": "Normal" }, "#ff7f27": { "name": "Orange", "rank": "Normal" },
+            "#f6aa09": { "name": "Gold", "rank": "Normal" }, "#f9dd3b": { "name": "Yellow", "rank": "Normal" },
+            "#fffabc": { "name": "Light Yellow", "rank": "Normal" }, "#0eb968": { "name": "Dark Green", "rank": "Normal" },
+            "#13e67b": { "name": "Green", "rank": "Normal" }, "#87ff5e": { "name": "Light Green", "rank": "Normal" },
+            "#0c816e": { "name": "Dark Teal", "rank": "Normal" }, "#10ae82": { "name": "Teal", "rank": "Normal" },
+            "#13e1be": { "name": "Light Teal", "rank": "Normal" }, "#60f7f2": { "name": "Cyan", "rank": "Normal" },
+            "#28509e": { "name": "Dark Blue", "rank": "Normal" }, "#4093e4": { "name": "Blue", "rank": "Normal" },
+            "#6b50f6": { "name": "Indigo", "rank": "Normal" }, "#99b1fb": { "name": "Light Indigo", "rank": "Normal" },
+            "#780c99": { "name": "Dark Purple", "rank": "Normal" }, "#aa38b9": { "name": "Purple", "rank": "Normal" },
+            "#e09ff9": { "name": "Light Purple", "rank": "Normal" }, "#cb007a": { "name": "Dark Pink", "rank": "Normal" },
+            "#ec1f80": { "name": "Pink", "rank": "Normal" }, "#f38da9": { "name": "Light Pink", "rank": "Normal" },
+            "#684634": { "name": "Dark Brown", "rank": "Normal" }, "#95682a": { "name": "Brown", "rank": "Normal" },
+            "#f8b277": { "name": "Beige", "rank": "Normal" }, "#aaaaaa": { "name": "Medium Gray", "rank": "Normal" },
+            "#a50e1e": { "name": "Dark Red", "rank": "Premium" }, "#fa8072": { "name": "Light Red", "rank": "Premium" },
+            "#e45c1a": { "name": "Dark Orange", "rank": "Premium" }, "#9c8431": { "name": "Dark Goldenrod", "rank": "Premium" },
+            "#c5ad31": { "name": "Goldenrod", "rank": "Premium" }, "#e8d45f": { "name": "Light Goldenrod", "rank": "Premium" },
+            "#4a6b3a": { "name": "Dark Olive", "rank": "Premium" }, "#5a944a": { "name": "Olive", "rank": "Premium" },
+            "#84c573": { "name": "Light Olive", "rank": "Premium" }, "#0f799f": { "name": "Dark Cyan", "rank": "Premium" },
+            "#bbfaf2": { "name": "Light Cyan", "rank": "Premium" }, "#7dc7ff": { "name": "Light Blue", "rank": "Premium" },
+            "#4d31b8": { "name": "Dark Indigo", "rank": "Premium" }, "#4a4284": { "name": "Dark Slate Blue", "rank": "Premium" },
+            "#7a71c4": { "name": "Slate Blue", "rank": "Premium" }, "#b5aef1": { "name": "Light Slate Blue", "rank": "Premium" },
+            "#9b5249": { "name": "Dark Peach", "rank": "Premium" }, "#d18078": { "name": "Peach", "rank": "Premium" },
+            "#fab6a4": { "name": "Light Peach", "rank": "Premium" }, "#dba463": { "name": "Light Brown", "rank": "Premium" },
+            "#7b6352": { "name": "Dark Tan", "rank": "Premium" }, "#9c846b": { "name": "Tan", "rank": "Premium" },
+            "#d6b594": { "name": "Light Tan", "rank": "Premium" }, "#d18051": { "name": "Dark Beige", "rank": "Premium" },
+            "#ffc5a5": { "name": "Light Beige", "rank": "Premium" }, "#6d643f": { "name": "Dark Stone", "rank": "Premium" },
+            "#948c6b": { "name": "Stone", "rank": "Premium" }, "#cdc59e": { "name": "Light Stone", "rank": "Premium" },
+            "#333941": { "name": "Dark Slate", "rank": "Premium" }, "#6d758d": { "name": "Slate", "rank": "Premium" },
+            "#b3b9d1": { "name": "Light Slate", "rank": "Premium" }
+        };
+
+        // 計算を高速化するために、パレットの色をRGBオブジェクトの配列に変換
+        const PALETTE_COLORS = Object.entries(WPLACE_PALETTE).map(([hex, data]) => {
+            const r = parseInt(hex.substring(1, 7).substring(0, 2), 16);
+            const g = parseInt(hex.substring(1, 7).substring(2, 4), 16);
+            const b = parseInt(hex.substring(1, 7).substring(4, 6), 16);
+            return { r, g, b, hex: hex.substring(1).toUpperCase(), name: data.name, rank: data.rank }; // HexをRRGGBB形式で保存
+        });
+
+        // DOM要素の取得と一時的なデータ保存用変数
+        const imageUpload = document.getElementById('imageUpload');
+        const processButton = document.getElementById('processButton');
+        const downloadButton = document.getElementById('downloadButton');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const processingCanvas = document.getElementById('processingCanvas');
+        const ctx = processingCanvas.getContext('2d');
+        const placeholderText = document.getElementById('placeholder-text');
+        const downloadSection = document.getElementById('download-section');
+        const imageInfo = document.getElementById('image-info');
+        const statusArea = document.getElementById('status-area');
+        
+        let processedDataForXLSX = [];
+        let imageDimensions = { width: 0, height: 0 };
+
+
+        // RGB間のユークリッド距離を計算
+        function rgbDistance(r1, g1, b1, r2, g2, b2) {
+            const dr = r1 - r2;
+            const dg = g1 - g2;
+            const db = b1 - b2;
+            return Math.sqrt(dr * dr + dg * dg + db * db);
+        }
+
+        /**
+         * 与えられたピクセルRGB値に最も近いパレットの色を見つける
+         */
+        function findClosestColor(r, g, b) {
+            let minDistance = Infinity;
+            let closestColor = null;
+
+            for (const color of PALETTE_COLORS) {
+                const distance = rgbDistance(r, g, b, color.r, color.g, color.b);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestColor = color;
+                }
+            }
+            return closestColor;
+        }
+
+        /**
+         * 背景色に応じて最適な文字色（黒または白）を決定する (コントラスト判定)
+         */
+        function getContrastColor(r, g, b) {
+            // 輝度を計算 (0～255)
+            const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            return luminance > 140 ? '000000' : 'FFFFFF'; // Excel形式（RRGGBB）で返す
+        }
+
+        // --- イベントリスナー ---
+
+        imageUpload.addEventListener('change', (event) => {
+            if (event.target.files.length > 0) {
+                processButton.disabled = false;
+                downloadSection.classList.add('hidden');
+                placeholderText.textContent = '画像をアップロードして「画像を処理してダウンロード準備」ボタンを押してください。';
+            } else {
+                processButton.disabled = true;
+            }
+        });
+
+        processButton.addEventListener('click', () => {
+            const file = imageUpload.files[0];
+            if (!file) {
+                showMessage('画像をアップロードしてください。', 'error');
+                return;
+            }
+            processImage(file);
+        });
+
+        downloadButton.addEventListener('click', () => {
+            if (processedDataForXLSX.length > 0) {
+                downloadXLSX();
+            } else {
+                showMessage('ダウンロードするデータがありません。先に画像を処理してください。', 'error');
+            }
+        });
+        
+        // エラーやステータスメッセージの表示
+        function showMessage(message, type = 'info') {
+            const className = type === 'error' ? 'text-red-600 bg-red-100' : 'text-gray-600 bg-gray-100';
+            statusArea.innerHTML = `<p class="p-4 rounded-lg ${className}">${message}</p>`;
+            placeholderText.classList.add('hidden');
+            downloadSection.classList.add('hidden');
+        }
+
+
+        /**
+         * 画像を処理し、XLSX用のデータ配列を生成するメイン関数
+         * @param {File} file - アップロードされた画像ファイル
+         */
+        function processImage(file) {
+            loadingOverlay.classList.remove('hidden');
+            statusArea.innerHTML = '';
+            processButton.disabled = true;
+            downloadSection.classList.add('hidden');
+            processedDataForXLSX = [];
+
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    try {
+                        const width = img.width;
+                        const height = img.height;
+                        imageDimensions = { width, height };
+
+                        // Canvasに画像を元サイズで描画
+                        processingCanvas.width = width;
+                        processingCanvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // ピクセルデータの取得
+                        const imageData = ctx.getImageData(0, 0, width, height);
+                        const data = imageData.data;
+                        
+                        const rows = [];
+
+                        // 各ピクセルを処理し、XLSXのセルオブジェクトを生成
+                        for (let y = 0; y < height; y++) {
+                            const row = [];
+                            for (let x = 0; x < width; x++) {
+                                const dataIndex = (y * width + x) * 4;
+                                const r = data[dataIndex];
+                                const g = data[dataIndex + 1];
+                                const b = data[dataIndex + 2];
+
+                                // 最も近い色を検索
+                                const closestColor = findClosestColor(r, g, b);
+                                
+                                // 文字色（コントラスト）を決定 (RRGGBB形式)
+                                const textColor = getContrastColor(closestColor.r, closestColor.g, closestColor.b);
+
+                                // SheetJSのスタイル設定
+                                const cellStyle = {
+                                    fill: { fgColor: { rgb: closestColor.hex } },
+                                    font: { color: { rgb: textColor }, bold: true, name: 'Inter', sz: 8 },
+                                    alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
+                                    border: {}
+                                };
+                                
+                                // Premiumランクの場合は枠線を追加 (文字色を使用)
+                                if (closestColor.rank === 'Premium') {
+                                    const border = { style: 'thin', color: { rgb: textColor } };
+                                    cellStyle.border = {
+                                        top: border, bottom: border, left: border, right: border
+                                    };
+                                }
+
+                                // セルオブジェクト (v: Value, s: Style)
+                                row.push({ 
+                                    v: closestColor.name, 
+                                    s: cellStyle 
+                                });
+                            }
+                            rows.push(row);
+                        }
+
+                        processedDataForXLSX = rows;
+
+                        // 成功メッセージとダウンロードセクションの表示
+                        imageInfo.textContent = `処理完了! 画像サイズ: ${width}x${height} (${width * height}ピクセル)`;
+                        downloadSection.classList.remove('hidden');
+                        statusArea.innerHTML = '';
+
+
+                    } catch (error) {
+                        console.error('画像処理エラー:', error);
+                        showMessage('画像処理中にエラーが発生しました。非常に大きな画像の場合、ブラウザのメモリ不足が原因かもしれません。', 'error');
+                    } finally {
+                        loadingOverlay.classList.add('hidden');
+                        processButton.disabled = false;
+                    }
+                };
+                img.onerror = () => {
+                    loadingOverlay.classList.add('hidden');
+                    processButton.disabled = false;
+                    showMessage('画像の読み込みに失敗しました。ファイルが有効な画像形式であるか確認してください。', 'error');
+                };
+                img.src = e.target.result;
+            };
+
+            reader.onerror = () => {
+                loadingOverlay.classList.add('hidden');
+                processButton.disabled = false;
+                showMessage('ファイルの読み込みに失敗しました。', 'error');
+            };
+
+            reader.readAsDataURL(file);
+        }
+
+        /**
+         * 処理済みデータからXLSXファイルを生成してダウンロードする
+         */
+        function downloadXLSX() {
+            if (typeof XLSX === 'undefined') {
+                 showMessage('Excelライブラリが読み込まれていません。ページを再読み込みしてください。', 'error');
+                 return;
+            }
+
+            const { width, height } = imageDimensions;
+
+            // ワークブックとワークシートの作成
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(processedDataForXLSX);
+
+            // セル幅の調整: 各カラムをピクセル幅に合わせて微調整
+            const defaultColWidth = width > 100 ? 1 : (width > 50 ? 2 : 5);
+            ws['!cols'] = Array(width).fill({ wch: defaultColWidth }); 
+
+            // 行高の調整: 各行をピクセル高さに合わせて微調整
+            const defaultRowHeight = height > 100 ? 5 : (height > 50 ? 10 : 20);
+            ws['!rows'] = Array(height).fill({ hpt: defaultRowHeight });
+            
+            // XLSXにスタイルを適用するためには、ワークブックのオプションで`cellStyles: true`が必要
+            // SheetJSはaoa_to_sheetに渡された配列内のオブジェクト（v, sを持つ）を認識する
+
+            XLSX.utils.book_append_sheet(wb, ws, "Wplace_Pixel_Art");
+
+            // ファイル名を設定してダウンロード
+            XLSX.writeFile(wb, "Wplace_Pixel_Art_" + Date.now() + ".xlsx", { cellStyles: true });
+
+            showMessage('ダウンロードを開始しました。', 'info');
+        }
+
+    </script>
+</body>
+</html>
