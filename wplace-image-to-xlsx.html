@@ -183,14 +183,13 @@
         processButton.addEventListener('click', () => {
             const file = imageUpload.files[0];
             if (!file) {
-                // カスタムモーダルメッセージを表示
                 showMessage('画像をアップロードしてください。', 'error'); 
                 return;
             }
             processImage(file);
         });
 
-        // ダウンロードボタンのイベントリスナーを修正
+        // ダウンロードボタンのイベントリスナー（クラッシュ対策済み）
         downloadButton.addEventListener('click', () => {
             if (processedDataForXLSX.length > 0) {
                 // ダウンロード開始時の視覚的フィードバックをすぐに実行
@@ -198,7 +197,6 @@
                 downloadButton.disabled = true;
                 
                 // 重い処理をsetTimeoutでラップし、UIスレッドが更新される時間を与える
-                // これにより、フリーズする前に「処理中...」メッセージを表示する機会が生まれる
                 setTimeout(() => {
                     try {
                         // 同期で重いダウンロード処理を実行
@@ -227,7 +225,10 @@
 
             statusArea.innerHTML = `<p class="p-4 rounded-lg ${className}">${message}</p>`;
             placeholderText.classList.add('hidden');
-            downloadSection.classList.add('hidden');
+            // ダウンロードセクションが非表示の場合のみ、セクション自体も隠す
+            if (type !== 'info-long') {
+                downloadSection.classList.add('hidden');
+            }
         }
 
 
@@ -263,7 +264,7 @@
                         
                         const rows = [];
 
-                        // 3. 各ピクセルを処理し、XLSXのセルオブジェクトを生成 (ここは同期処理だが、Canvasからのデータ取得後に実行)
+                        // 3. 各ピクセルを処理し、XLSXのセルオブジェクトを生成
                         for (let y = 0; y < height; y++) {
                             const row = [];
                             for (let x = 0; x < width; x++) {
@@ -281,8 +282,7 @@
                                 // SheetJSのスタイル設定
                                 const cellStyle = {
                                     fill: { fgColor: { rgb: closestColor.hex } },
-                                    // フォントサイズを最小化 (6) 
-                                    font: { color: { rgb: textColor }, bold: true, name: 'Inter', sz: 6 },
+                                    font: { color: { rgb: textColor }, bold: true, name: 'Inter', sz: 8 },
                                     alignment: { vertical: 'center', horizontal: 'center', wrapText: true },
                                     border: {}
                                 };
@@ -352,12 +352,13 @@
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet(processedDataForXLSX);
 
-            // セル幅と行高の調整
-            // 小さな値に設定し、ピクセルアート風の見た目を再現
-            const colWidth = 1.2; 
-            const rowHeight = 6; // ポイント単位
-
+            // 修正点: セル幅と行高をさらに拡大 (よりゆとりあるレイアウトに)
+            const colWidth = 12; // 文字数に基づいた幅を12に拡大
+            const rowHeight = 24; // ポイント単位の行高を24に拡大
+            
+            // 各カラムに同じ幅を設定
             ws['!cols'] = Array(width).fill({ wch: colWidth }); 
+            // 各行に同じ高さを設定
             ws['!rows'] = Array(height).fill({ hpt: rowHeight });
             
             XLSX.utils.book_append_sheet(wb, ws, "Wplace_Pixel_Art");
