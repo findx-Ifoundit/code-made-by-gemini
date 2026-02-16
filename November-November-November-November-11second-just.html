@@ -35,8 +35,9 @@
 
         .false-text {
             color: var(--adachi-orange);
-            opacity: 0.2;
+            opacity: 0.15;
             filter: grayscale(1);
+            transform: scale(0.95);
         }
 
         .glitch-active {
@@ -50,7 +51,7 @@
         }
 
         .item-container {
-            transition: all 0.2s ease;
+            transition: all 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
             background: rgba(255, 102, 0, 0.03);
             border: 1px solid rgba(255, 102, 0, 0.1);
         }
@@ -65,6 +66,7 @@
             font-variant-numeric: tabular-nums;
             color: var(--adachi-orange);
             text-shadow: 0 0 20px rgba(255, 102, 0, 0.3);
+            font-size: clamp(2rem, 11vw, 7rem); 
         }
 
         .gacha-box {
@@ -83,56 +85,55 @@
         }
     </style>
 </head>
-<body class="flex flex-col items-center justify-center min-h-screen p-4 py-12">
+<body class="flex flex-col items-center justify-center min-h-screen p-4 py-8">
 
-    <!-- ヘッダー -->
-    <div class="mb-10 text-center">
-        <p class="text-[10px] uppercase tracking-[0.5em] mb-3 text-orange-500/50 font-black">Adachi Rei Protocol</p>
-        <h1 class="text-orange-400 text-sm italic font-bold">11月11月11月11月11秒ジャスト！！！</h1>
+    <div class="mb-6 text-center">
+        <p class="text-[8px] md:text-[10px] uppercase tracking-[0.5em] mb-2 text-orange-500/50 font-black">Adachi Rei Protocol // Status: Standby</p>
+        <h1 class="text-orange-400 text-xs md:text-sm italic font-bold px-4 leading-tight">11月11月11月11月11秒ジャスト！！！</h1>
     </div>
 
-    <!-- 判定グリッド -->
-    <div id="status-display" class="flex flex-wrap justify-center gap-4 md:gap-8 mb-16">
-        <!-- JS Managed -->
+    <!-- 判定パネル -->
+    <div id="status-display" class="flex flex-wrap justify-center gap-2 md:gap-6 mb-8 w-full max-w-4xl px-2">
+        <!-- JSで動的に生成 -->
     </div>
 
-    <!-- カウントダウン & 時計 -->
-    <div class="w-full max-w-4xl px-4 mb-16">
-        <div class="relative p-10 rounded-[3rem] overflow-hidden text-center border border-orange-500/10 bg-black/40 backdrop-blur-md shadow-2xl">
-            <h2 id="countdown-label" class="text-[10px] mb-6 text-orange-500/40 tracking-[0.8em] uppercase font-black">Next Synchronization</h2>
-            <div id="countdown" class="countdown-display text-5xl md:text-[7rem] font-mono font-black tracking-tighter leading-none mb-6">00:00:00:00</div>
-            <div id="current-time" class="text-xl font-mono text-orange-500/50 italic mb-4">0000.00.00 00:00:00</div>
-            <div class="text-[10px] font-mono text-orange-500/30 border-t border-orange-500/5 pt-6 flex justify-between">
-                <span>LOGIC: Month(11) x 4 & Sec(11) x 1</span>
+    <!-- メインカウンター -->
+    <div class="w-full max-w-4xl px-2 mb-8">
+        <div class="relative p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] overflow-hidden text-center border border-orange-500/10 bg-black/40 backdrop-blur-md shadow-2xl">
+            <h2 id="countdown-label" class="text-[8px] md:text-[10px] mb-4 text-orange-500/40 tracking-[0.5em] md:tracking-[0.8em] uppercase font-black">Targeting November</h2>
+            <div id="countdown" class="countdown-display font-mono font-black tracking-tighter leading-none mb-4 whitespace-nowrap">000:00:00:00</div>
+            <div id="current-time" class="text-sm md:text-xl font-mono text-orange-500/50 italic mb-2">0000.00.00 00:00:00</div>
+            <div class="text-[8px] md:text-[10px] font-mono text-orange-500/30 border-t border-orange-500/5 pt-4 flex justify-between px-2">
+                <span>SYSTEM LOGIC: REALTIME SYNC</span>
                 <span id="current-ms">MS // 000</span>
             </div>
         </div>
     </div>
 
-    <!-- 足立ガチャセクション -->
-    <div class="w-full max-w-2xl px-4">
-        <div class="gacha-box p-8 rounded-[2rem] relative overflow-hidden group">
-            <div class="flex justify-between items-center mb-6">
-                <span class="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500/60">Adachi Gacha (Fixed 5m interval)</span>
-                <button id="gacha-refresh" class="text-xs bg-orange-500/20 hover:bg-orange-500/40 px-3 py-1 rounded-full text-orange-400 font-bold transition-all">
-                    ROLL AGAIN
+    <!-- 足立ガチャ -->
+    <div class="w-full max-w-2xl px-2">
+        <div class="gacha-box p-6 md:p-8 rounded-[1.5rem] md:rounded-[2rem] relative overflow-hidden group">
+            <div class="flex justify-between items-center mb-4">
+                <span class="text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] text-orange-500/60">Adachi Log Gacha</span>
+                <button id="gacha-refresh" class="text-[10px] bg-orange-500/20 hover:bg-orange-500/40 px-3 py-1 rounded-full text-orange-400 font-bold transition-all">
+                    RE-ROLL
                 </button>
             </div>
             
-            <div id="gacha-content" class="min-h-[100px] flex flex-col justify-center">
-                <p id="gacha-text" class="text-lg md:text-xl font-bold leading-relaxed mb-4 text-orange-100 cursor-pointer hover:text-orange-400 transition-colors">
-                    同期中...
+            <div id="gacha-content" class="min-h-[80px] flex flex-col justify-center">
+                <p id="gacha-text" class="text-base md:text-xl font-bold leading-relaxed mb-4 text-orange-100 cursor-pointer hover:text-orange-400 transition-colors line-clamp-4">
+                    ...
                 </p>
-                <a id="gacha-link" href="#" target="_blank" class="text-[10px] font-mono text-orange-500/40 hover:text-orange-400 break-all">
-                    URL: sync required
+                <a id="gacha-link" href="#" target="_blank" class="text-[8px] md:text-[10px] font-mono text-orange-500/40 hover:text-orange-400 break-all truncate">
+                    URL: waiting
                 </a>
             </div>
 
             <div id="gacha-timer" class="mt-6 h-1 bg-orange-500/10 rounded-full overflow-hidden">
                 <div id="gacha-progress" class="h-full bg-orange-500 transition-all duration-500 ease-linear" style="width: 0%"></div>
             </div>
-            <div class="mt-2 text-[8px] font-mono text-orange-500/30 text-right uppercase">
-                Next Sync at: <span id="next-sync-time">--:--:00</span>
+            <div class="mt-2 text-[7px] md:text-[8px] font-mono text-orange-500/30 text-right uppercase">
+                Next Sync: <span id="next-sync-time">--:--:00</span>
             </div>
         </div>
     </div>
@@ -156,20 +157,17 @@
 
         async function rollGacha() {
             gachaText.classList.add('loading-pulse');
-            gachaText.textContent = "データを同期しています...";
-            
+            gachaText.textContent = "データを読み込み中...";
             try {
                 const response = await fetch('https://adachi.2237yh.net/api/posts/random');
                 const data = await response.json();
-                
                 gachaText.textContent = data.text || "（テキストなし）";
                 gachaLink.textContent = `URL: ${data.url}`;
                 gachaLink.href = data.url;
                 gachaText.onclick = () => window.open(data.url, '_blank');
-                
                 gachaText.classList.remove('loading-pulse');
             } catch (error) {
-                gachaText.textContent = "同期エラー。再度お試しください。";
+                gachaText.textContent = "同期エラー";
                 gachaText.classList.remove('loading-pulse');
             }
         }
@@ -177,7 +175,7 @@
         gachaRefresh.onclick = rollGacha;
 
         function fireConfetti() {
-            const opt = { particleCount: 10, spread: 55, colors: ['#ff6600', '#ffffff', '#ffaa00'], zIndex: 100 };
+            const opt = { particleCount: 15, spread: 60, colors: ['#ff6600', '#ffffff', '#ffaa00'], zIndex: 100 };
             confetti({ ...opt, angle: 60, origin: { x: 0, y: 1 } });
             confetti({ ...opt, angle: 120, origin: { x: 1, y: 1 } });
         }
@@ -185,7 +183,7 @@
         function update() {
             const now = new Date();
             const ms = now.getMilliseconds();
-            const month = now.getMonth() + 1;
+            const month = now.getMonth() + 1; // 1-12
             const minutes = now.getMinutes();
             const seconds = now.getSeconds();
 
@@ -194,20 +192,20 @@
                 `${now.getFullYear()}.${String(month).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')} ` +
                 `${String(now.getHours()).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 
-            // ロジック修正：月と秒を独立して判定するように変更
+            // 本物の時間判定
             const isNovember = month === 11;
             const is11Seconds = seconds === 11;
-            
+
             const criteria = [
                 { label: "11月", val: isNovember },
                 { label: "11月", val: isNovember },
                 { label: "11月", val: isNovember },
                 { label: "11月", val: isNovember },
-                { label: "11秒", val: is11Seconds } // 11月条件を外して秒単体で光るように修正
+                { label: "11秒", val: is11Seconds }
             ];
 
             const currentStateStr = criteria.map(c => c.val).join(',');
-            const isAllTrue = criteria.every(c => c.val);
+            const isAllTrue = isNovember && is11Seconds;
 
             if (currentStateStr !== lastStateStr) {
                 renderStatus(criteria, isAllTrue);
@@ -223,14 +221,14 @@
                 }
             }
 
+            // ガチャの5分更新
             if (minutes % 5 === 0 && lastSyncedMinute !== minutes) {
                 lastSyncedMinute = minutes;
                 rollGacha();
             }
 
             const currentTotalSeconds = (minutes % 5) * 60 + seconds;
-            const totalSecondsInWindow = 5 * 60;
-            const progress = (currentTotalSeconds / totalSecondsInWindow) * 100;
+            const progress = (currentTotalSeconds / 300) * 100;
             gachaProgress.style.width = `${progress}%`;
 
             const nextSyncMin = (Math.floor(minutes / 5) + 1) * 5;
@@ -242,15 +240,15 @@
             requestAnimationFrame(update);
         }
 
-        function renderStatus(criteria, allTrue) {
+        function renderStatus(criteria, isAllTrue) {
             statusDisplay.innerHTML = '';
             criteria.forEach(item => {
                 const div = document.createElement('div');
-                div.className = `item-container p-6 md:p-10 rounded-3xl min-w-[140px] md:min-w-[180px] flex flex-col items-center shadow-xl ${item.val ? 'is-true true-text' : 'false-text'}`;
-                if (item.val && allTrue) div.classList.add('glitch-active');
+                div.className = `item-container p-3 md:p-8 rounded-2xl md:rounded-3xl flex-1 min-w-[60px] md:min-w-[150px] flex flex-col items-center shadow-lg transition-all duration-300 ${item.val ? 'is-true true-text' : 'false-text'}`;
+                if (isAllTrue) div.classList.add('glitch-active');
                 div.innerHTML = `
-                    <div class="text-[10px] uppercase tracking-[0.3em] font-black mb-2">${item.label}</div>
-                    <div class="text-4xl md:text-6xl font-black uppercase tracking-tighter">${item.val ? 'true' : 'false'}</div>
+                    <div class="text-[6px] md:text-[10px] uppercase tracking-[0.1em] md:tracking-[0.3em] font-black mb-1">${item.label}</div>
+                    <div class="text-xs md:text-5xl font-black uppercase tracking-tighter">${item.val ? 'true' : 'false'}</div>
                 `;
                 statusDisplay.appendChild(div);
             });
@@ -262,7 +260,7 @@
                 let targetYear = now.getFullYear();
                 if (now.getMonth() >= 11) targetYear++;
                 target = new Date(targetYear, 10, 1, 0, 0, 11);
-                countdownLabel.textContent = "Next 11-Month Window";
+                countdownLabel.textContent = "Countdown to November";
             } else {
                 target = new Date(now.getTime());
                 target.setMilliseconds(0);
@@ -272,18 +270,18 @@
                 } else {
                     target.setSeconds(11);
                 }
-                countdownLabel.textContent = "Next 11-Seconds Sync";
+                countdownLabel.textContent = "Next 11s Window";
             }
 
             const diff = target - now;
-            const d = Math.floor(diff / (1000 * 60 * 60 * 24));
-            const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-            const s = Math.floor((diff % (1000 * 60)) / 1000);
+            const d = Math.floor(diff / 86400000);
+            const h = Math.floor((diff % 86400000) / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
 
             if (isNovember) {
-                const displayMs = Math.floor((diff % 1000) / 10);
-                countdownDisplay.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(displayMs).padStart(2, '0')}`;
+                const msPart = Math.floor((diff % 1000) / 10);
+                countdownDisplay.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(msPart).padStart(2, '0')}`;
             } else {
                 countdownDisplay.textContent = `${String(d).padStart(3, '0')}:${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
             }
