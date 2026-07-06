@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="InertialSpace">
     
-    <title>空間慣性シミュレーター v1.7.0-spatial</title>
+    <title>空間慣性シミュレーター v1.8.0-spatial</title>
     <style>
         /* 基本リセットとタッチ操作の無効化（アプリ化） */
         * {
@@ -408,7 +408,7 @@
 
     <!-- ヘッダーUI -->
     <header id="headerUi">
-        <div class="version-badge">v1.7.0-spatial</div>
+        <div class="version-badge">v1.8.0-spatial</div>
         <h1>INERTIAL SPACE</h1>
         <p>スマホを水平に動かすと、描画された空間（座標）がその場に留まり続けます。</p>
     </header>
@@ -484,7 +484,7 @@
                 </label>
             </div>
 
-            <!-- ゴムのような自動引き戻し強さ（デフォルト 0 で、完全に引っ張られない仕様に） -->
+            <!-- ゴムのような自動引き戻し強さ -->
             <div class="slider-group">
                 <div class="slider-header">
                     <span>ゴム効果 (中心への自動引き戻し強度)</span>
@@ -520,7 +520,7 @@
             </button>
         </div>
         
-        <div class="footer-version">Inertial Space App - v1.7.0-spatial</div>
+        <div class="footer-version">Inertial Space App - v1.8.0-spatial</div>
     </footer>
 
     <script>
@@ -595,7 +595,7 @@
         const STATS_WINDOW_SIZE = 120; // 約2秒分のデータを保持して静止を判定
 
         let sensitivity = parseFloat(sensitivitySlider.value);
-        let rubberStrength = parseFloat(rubberSlider.value); // ゴム効果の初期値 (0.00 = 引っ張られない)
+        let rubberStrength = parseFloat(rubberSlider.value); // ゴム効果の初期値
         let friction = parseFloat(frictionSlider.value); 
         let isInverted = invertToggle.checked; // 反転フラグ
 
@@ -786,7 +786,6 @@
             let processedAccY = rawAccelY - biasY;
 
             // 超低周波カットフィルター（微小ノイズ、手ブレ、ドリフトの除去）
-            // これにより、スマホを完全に静止させた時に勝手に流れる現象を強力に抑えます。
             const deadzone = 0.08;
             if (Math.abs(processedAccX) < deadzone) processedAccX = 0;
             if (Math.abs(processedAccY) < deadzone) processedAccY = 0;
@@ -819,34 +818,58 @@
             }
 
             // 移動方向（通常は -1、インバート時は 1）
-            // iOSは右への平行スライドで acc.x がプラス、上（前）へのスライドで acc.y がプラス。
-            // 空間の元の場所に点を留めるためには、移動方向と逆方向に座標を動かす必要があります。
             const directionMultiplier = isInverted ? 1 : -1;
 
             /*
-              ★ 物理演算の最適化（1回積分型インパルスマッピング） ★
-              2回積分（加速度→速度→位置）だと「加速」と「止まるときの減速（逆向きの加速度）」が
-              完全に相殺して元の位置に引き戻されてしまうため、加速度を直接「推進速度」として
-              1回積分させ、摩擦（減衰抵抗）でブレーキをかけるモデルに改良しました。
+              ★ ブレーキ・フィルタリング・アルゴリズム ★
+              デバイスの動いている速度(vx, vy)と、新しく発生した加速度(processedAcc)の向きを比較。
+              加速の後に必ずやってくる「ブレーキ(反対方向の減速度)」を検知したときは、
+              逆方向への移動に繋げずに、現在の移動速度を急激にリセット(減衰)してピタッと止めます。
             */
-            const baseForceMultiplier = 40; // 空間の滑らかなずれに最適なスケールファクター
+            const baseForceMultiplier = 45; // 空間のずれに最適な倍率
             
-            // 加速度の瞬間パルスを、そのまま空間の移動速度へとマッピング
+            // 瞬間加速度に基づく目標速度
             const targetVx = processedAccX * sensitivity * baseForceMultiplier * directionMultiplier;
             const targetVy = processedAccY * sensitivity * baseForceMultiplier * directionMultiplier;
 
-            // 加速度から速度へマージ（ローパスフィルターを通してノイズを平滑化）
-            spaceOffset.vx = spaceOffset.vx * 0.3 + targetVx * 0.7;
-            spaceOffset.vy = spaceOffset.vy * 0.3 + targetVy * 0.7;
+            // --- X軸ブレーキ判定 ---
+            if (targetVx !== 0) {
+                // 現在すでにその方向に動いており、加速度の向きが現在の速度と「逆」の場合（ブレーキ中）
+                if (spaceOffset.vx !== 0 && Math.sign(targetVx) !== Math.sign(spaceOffset.vx)) {
+                    // 現在の速度を急激に減衰（ブレーキ）させ、逆移動へ突き抜けるのを防ぐ
+                    spaceOffset.vx *= 0.4;
+                    // 反対向きに突き抜けないよう、速度の符号が反転しそうならゼロで止める
+                    if (Math.abs(spaceOffset.vx) < 0.2) {
+                        spaceOffset.vx = 0;
+                    }
+                } else {
+                    // 通常の加速
+                    spaceOffset.vx = spaceOffset.vx * 0.3 + targetVx * 0.7;
+                }
+            } else {
+                spaceOffset.vx *= friction;
+            }
+
+            // --- Y軸ブレーキ判定 ---
+            if (targetVy !== 0) {
+                // 現在すでにその方向に動いており、加速度の向きが現在の速度と「逆」の場合（ブレーキ中）
+                if (spaceOffset.vy !== 0 && Math.sign(targetVy) !== Math.sign(spaceOffset.vy)) {
+                    // 現在の速度を急激に減衰
+                    spaceOffset.vy *= 0.4;
+                    if (Math.abs(spaceOffset.vy) < 0.2) {
+                        spaceOffset.vy = 0;
+                    }
+                } else {
+                    // 通常の加速
+                    spaceOffset.vy = spaceOffset.vy * 0.3 + targetVy * 0.7;
+                }
+            } else {
+                spaceOffset.vy *= friction;
+            }
 
             // 速度から位置（座標ズレ）への積分
-            // Y軸は画面座標系（下がプラス）に適合させるため、減算ではなく加算で正確に同期
             spaceOffset.x += spaceOffset.vx;
             spaceOffset.y += spaceOffset.vy;
-
-            // 速度に対する減衰抵抗（摩擦）。これによって減速時の逆向きの力を吸収し、その場に留まります。
-            spaceOffset.vx *= friction;
-            spaceOffset.vy *= friction;
 
             // 画面表示用に現在位置を更新
             valXEl.textContent = spaceOffset.x.toFixed(1) + ' px';
