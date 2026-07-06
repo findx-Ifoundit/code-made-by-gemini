@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="InertialSpace">
     
-    <title>空間慣性シミュレーター v1.5.0-spatial</title>
+    <title>空間慣性シミュレーター v1.6.0-spatial</title>
     <style>
         /* 基本リセットとタッチ操作の無効化（アプリ化） */
         * {
@@ -408,7 +408,7 @@
 
     <!-- ヘッダーUI -->
     <header id="headerUi">
-        <div class="version-badge">v1.5.0-spatial</div>
+        <div class="version-badge">v1.6.0-spatial</div>
         <h1>INERTIAL SPACE</h1>
         <p>スマホを水平に動かすと、描画された空間（座標）がその場に留まり続けます。</p>
     </header>
@@ -475,7 +475,7 @@
                 <input id="sensitivitySlider" type="range" min="1.0" max="35.0" step="0.5" value="5.0" class="range-slider">
             </div>
 
-            <!-- 方向反転スイッチ（逆方向に動く問題の即時対応用） -->
+            <!-- 方向反転スイッチ -->
             <div class="toggle-container">
                 <span>移動方向を反転（インバート）</span>
                 <label class="switch">
@@ -484,9 +484,18 @@
                 </label>
             </div>
 
+            <!-- ゴムのような自動引き戻し強さ（デフォルト 0 で、完全に引っ張られない仕様に） -->
             <div class="slider-group">
                 <div class="slider-header">
-                    <span>物理慣性の減衰抵抗 (ドリフト制御)</span>
+                    <span>ゴム効果 (中心への自動引き戻し強度)</span>
+                    <span id="rubberVal" class="status-val">0.00</span>
+                </div>
+                <input id="rubberSlider" type="range" min="0.00" max="0.10" step="0.01" value="0.00" class="range-slider">
+            </div>
+
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span>物理慣性の減衰抵抗 (滑らかさ)</span>
                     <span id="frictionVal" class="status-val">0.96</span>
                 </div>
                 <input id="frictionSlider" type="range" min="0.80" max="0.99" step="0.01" value="0.96" class="range-slider">
@@ -511,7 +520,7 @@
             </button>
         </div>
         
-        <div class="footer-version">Inertial Space App - v1.5.0-spatial</div>
+        <div class="footer-version">Inertial Space App - v1.6.0-spatial</div>
     </footer>
 
     <script>
@@ -528,6 +537,8 @@
         const valYEl = document.getElementById('valY');
         const sensitivitySlider = document.getElementById('sensitivitySlider');
         const sensitivityVal = document.getElementById('sensitivityVal');
+        const rubberSlider = document.getElementById('rubberSlider');
+        const rubberVal = document.getElementById('rubberVal');
         const frictionSlider = document.getElementById('frictionSlider');
         const frictionVal = document.getElementById('frictionVal');
         const invertToggle = document.getElementById('invertToggle');
@@ -584,12 +595,18 @@
         const STATS_WINDOW_SIZE = 120; // 約2秒分のデータを保持して静止を判定
 
         let sensitivity = parseFloat(sensitivitySlider.value);
+        let rubberStrength = parseFloat(rubberSlider.value); // ゴム効果の初期値 (0.00 = 引っ張られない)
         let friction = parseFloat(frictionSlider.value); 
         let isInverted = invertToggle.checked; // 反転フラグ
 
         sensitivitySlider.addEventListener('input', (e) => {
             sensitivity = parseFloat(e.target.value);
             sensitivityVal.textContent = sensitivity.toFixed(1) + 'x';
+        });
+
+        rubberSlider.addEventListener('input', (e) => {
+            rubberStrength = parseFloat(e.target.value);
+            rubberVal.textContent = rubberStrength.toFixed(2);
         });
 
         frictionSlider.addEventListener('input', (e) => {
@@ -683,6 +700,7 @@
             requestAnimationFrame(loop);
         }
 
+        // デバイスのモーションイベントから生の加速度を取得
         function handleMotion(event) {
             const acc = event.acceleration;
             if (acc) {
@@ -772,7 +790,6 @@
             if (Math.abs(processedAccY) < 0.05) processedAccY = 0;
 
             // --- 常時自動補正ロジック ---
-            // 過去2秒のデータの最大値と最小値の差（振幅）を計算し、極めて静かであれば静止状態とみなす
             if (recentAccelsX.length >= STATS_WINDOW_SIZE) {
                 const minX = Math.min(...recentAccelsX);
                 const maxX = Math.max(...recentAccelsX);
@@ -784,39 +801,38 @@
 
                 // 加速度の変化幅が 0.15G 未満であれば完全に静止しているとみなす
                 if (rangeX < 0.15 && rangeY < 0.15) {
-                    // ゆっくりバイアス（ゼロ点）を実測値に追従させる
+                    // ゆっくりバイアス（ゼロ点）を実測値に追従させる（静止時のズレ自動修正）
                     biasX = biasX * 0.98 + rawAccelX * 0.02;
                     biasY = biasY * 0.98 + rawAccelY * 0.02;
 
-                    // 完全に静止しているため、ズレた座標（ドリフト）もゆっくりと中心へ戻し補正をかける
-                    spaceOffset.x += (0 - spaceOffset.x) * 0.05;
-                    spaceOffset.y += (0 - spaceOffset.y) * 0.05;
-                    spaceOffset.vx *= 0.8;
-                    spaceOffset.vy *= 0.8;
+                    // ゴム効果（自動引き戻し）の計算。ユーザー設定の「rubberStrength」を乗算
+                    // rubberStrength が 0 の場合、引き戻しは完全に無効化されます。
+                    spaceOffset.x += (0 - spaceOffset.x) * rubberStrength;
+                    spaceOffset.y += (0 - spaceOffset.y) * rubberStrength;
+                    
+                    if (rubberStrength > 0) {
+                        spaceOffset.vx *= 0.8;
+                        spaceOffset.vy *= 0.8;
+                    }
                 }
             }
 
-            /*
-              ★ 逆方向に動いてしまう問題の抜本的対策 ★
-              iOSにおける移動方向と描画の整合性を厳密にチューニング。
-              通常：スマホを右に動かしたとき（ processedAccX > 0 ）、空間は左へ（ マイナス方向 ）。
-              反転（インバート）：方向が逆になった場合に逆方向に切り替えるスイッチを実装。
-            */
+            // 移動方向（通常は -1、インバート時は 1）
             const directionMultiplier = isInverted ? 1 : -1;
 
             // 加速度から速度への積分
-            const forceMultiplier = 1500; // 移動量を視認しやすくするための定数
+            const forceMultiplier = 1500; // ピクセル等倍表示用
             const movementX = processedAccX * sensitivity * forceMultiplier * directionMultiplier; 
             const movementY = processedAccY * sensitivity * forceMultiplier * directionMultiplier;  
 
             spaceOffset.vx += movementX * dt;
-            spaceOffset.vy -= movementY * dt; // iOSの加速度軸方向を画面座標に適合
+            spaceOffset.vy -= movementY * dt; // Y軸方向を画面座標に適合
 
             // 速度から位置（座標ズレ）への積分
             spaceOffset.x += spaceOffset.vx * dt;
             spaceOffset.y += spaceOffset.vy * dt;
 
-            // 速度に対する減衰（エネルギーの拡散を防ぐ）
+            // 速度に対する減衰抵抗（摩擦）
             spaceOffset.vx *= friction;
             spaceOffset.vy *= friction;
 
