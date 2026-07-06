@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="InertialSpace">
     
-    <title>空間慣性シミュレーター v1.8.0-spatial</title>
+    <title>空間慣性シミュレーター v1.9.0-spatial</title>
     <style>
         /* 基本リセットとタッチ操作の無効化（アプリ化） */
         * {
@@ -408,7 +408,7 @@
 
     <!-- ヘッダーUI -->
     <header id="headerUi">
-        <div class="version-badge">v1.8.0-spatial</div>
+        <div class="version-badge">v1.9.0-spatial</div>
         <h1>INERTIAL SPACE</h1>
         <p>スマホを水平に動かすと、描画された空間（座標）がその場に留まり続けます。</p>
     </header>
@@ -520,7 +520,7 @@
             </button>
         </div>
         
-        <div class="footer-version">Inertial Space App - v1.8.0-spatial</div>
+        <div class="footer-version">Inertial Space App - v1.9.0-spatial</div>
     </footer>
 
     <script>
@@ -821,55 +821,69 @@
             const directionMultiplier = isInverted ? 1 : -1;
 
             /*
-              ★ ブレーキ・フィルタリング・アルゴリズム ★
-              デバイスの動いている速度(vx, vy)と、新しく発生した加速度(processedAcc)の向きを比較。
-              加速の後に必ずやってくる「ブレーキ(反対方向の減速度)」を検知したときは、
-              逆方向への移動に繋げずに、現在の移動速度を急激にリセット(減衰)してピタッと止めます。
+              ★ 物理的に正しい2回積分 ＆ 適応型ブレーキ処理へのアップデート ★
+              1. 単位を合わせるための重力加速度換算 (1G = 9.8 m/s²) と、ユーザー感度(sensitivity)を乗算
+              2. 速度積分: vx += accX * dt
+              3. ブレーキ検知時に、逆方向の加速度をブレーキ力(高減衰)として速度をダイナミックに相殺
+              4. 位置積分: x += vx * dt * 変換スケール
             */
-            const baseForceMultiplier = 45; // 空間のずれに最適な倍率
+            const gravityToPixels = 9.8 * 80; // 1Gあたりのピクセル移動スケール調整
             
-            // 瞬間加速度に基づく目標速度
-            const targetVx = processedAccX * sensitivity * baseForceMultiplier * directionMultiplier;
-            const targetVy = processedAccY * sensitivity * baseForceMultiplier * directionMultiplier;
+            // 加速度の物理値 (m/s² 基準)
+            const physicalAccX = processedAccX * sensitivity * directionMultiplier;
+            const physicalAccY = processedAccY * sensitivity * directionMultiplier;
 
-            // --- X軸ブレーキ判定 ---
-            if (targetVx !== 0) {
-                // 現在すでにその方向に動いており、加速度の向きが現在の速度と「逆」の場合（ブレーキ中）
-                if (spaceOffset.vx !== 0 && Math.sign(targetVx) !== Math.sign(spaceOffset.vx)) {
-                    // 現在の速度を急激に減衰（ブレーキ）させ、逆移動へ突き抜けるのを防ぐ
-                    spaceOffset.vx *= 0.4;
-                    // 反対向きに突き抜けないよう、速度の符号が反転しそうならゼロで止める
-                    if (Math.abs(spaceOffset.vx) < 0.2) {
+            // --- X軸の物理積分 ＆ ブレーキ制御 ---
+            if (physicalAccX !== 0) {
+                // ブレーキ判定：現在速度があり、かつ加速度が現在の速度と逆向きの場合
+                if (spaceOffset.vx !== 0 && Math.sign(physicalAccX) !== Math.sign(spaceOffset.vx)) {
+                    // ブレーキ（逆向きの加速度による急減速）
+                    // 2回積分を壊さずに、逆方向の加速度成分で速度をスムーズかつ急激に減衰させます
+                    spaceOffset.vx += physicalAccX * dt * 2.5; // ブレーキ効率を上げるために倍加
+                    spaceOffset.vx *= 0.75; // 速度の余韻をすばやく吸収
+                    
+                    // 速度が極めて小さくなった、または符号が反転しそうならピタッと止める
+                    if (Math.abs(spaceOffset.vx) < 0.5) {
                         spaceOffset.vx = 0;
                     }
                 } else {
-                    // 通常の加速
-                    spaceOffset.vx = spaceOffset.vx * 0.3 + targetVx * 0.7;
+                    // 通常の加速（速度の１回積分）
+                    spaceOffset.vx += physicalAccX * dt;
                 }
             } else {
-                spaceOffset.vx *= friction;
+                // 加速度がない場合は、スライダー設定の摩擦（Friction）でゆっくり減速
+                spaceOffset.vx *= (0.1 + friction * 0.9); // 摩擦の感覚をスムーズにする
+                if (Math.abs(spaceOffset.vx) < 0.1) spaceOffset.vx = 0;
             }
 
-            // --- Y軸ブレーキ判定 ---
-            if (targetVy !== 0) {
-                // 現在すでにその方向に動いており、加速度の向きが現在の速度と「逆」の場合（ブレーキ中）
-                if (spaceOffset.vy !== 0 && Math.sign(targetVy) !== Math.sign(spaceOffset.vy)) {
-                    // 現在の速度を急激に減衰
-                    spaceOffset.vy *= 0.4;
-                    if (Math.abs(spaceOffset.vy) < 0.2) {
+            // --- Y軸の物理積分 ＆ ブレーキ制御 ---
+            // Y軸は画面座標（下方向がプラス）なので符号の向きを補正
+            const adjustedPhysicalAccY = -physicalAccY; 
+
+            if (adjustedPhysicalAccY !== 0) {
+                // ブレーキ判定
+                if (spaceOffset.vy !== 0 && Math.sign(adjustedPhysicalAccY) !== Math.sign(spaceOffset.vy)) {
+                    // ブレーキ
+                    spaceOffset.vy += adjustedPhysicalAccY * dt * 2.5;
+                    spaceOffset.vy *= 0.75;
+                    
+                    if (Math.abs(spaceOffset.vy) < 0.5) {
                         spaceOffset.vy = 0;
                     }
                 } else {
                     // 通常の加速
-                    spaceOffset.vy = spaceOffset.vy * 0.3 + targetVy * 0.7;
+                    spaceOffset.vy += adjustedPhysicalAccY * dt;
                 }
             } else {
-                spaceOffset.vy *= friction;
+                spaceOffset.vy *= (0.1 + friction * 0.9);
+                if (Math.abs(spaceOffset.vy) < 0.1) spaceOffset.vy = 0;
             }
 
-            // 速度から位置（座標ズレ）への積分
-            spaceOffset.x += spaceOffset.vx;
-            spaceOffset.y += spaceOffset.vy;
+            // 速度から位置（座標ズレ）への積分 (リーク積分によるドリフト低減)
+            // dt を掛け算することで、フレームレートに依存しない完全な等速移動を再現します
+            const leakyFactor = 0.999; // 1フレームごとにごくわずかに中央ににじみ寄る（物理的な蓄積誤差を自然に抜くリーク積分）
+            spaceOffset.x = (spaceOffset.x + spaceOffset.vx * dt * gravityToPixels) * leakyFactor;
+            spaceOffset.y = (spaceOffset.y + spaceOffset.vy * dt * gravityToPixels) * leakyFactor;
 
             // 画面表示用に現在位置を更新
             valXEl.textContent = spaceOffset.x.toFixed(1) + ' px';
