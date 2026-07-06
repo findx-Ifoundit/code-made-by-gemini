@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    
+
     <!-- iPhone (iOS Safari) で「ホーム画面に追加」した時に完全フルスクリーンにするための設定 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="InertialSpace">
-    
-    <title>空間慣性シミュレーター v1.9.0-spatial</title>
+
+    <title>空間慣性シミュレーター v2.0.0-dt-physics</title>
     <style>
         /* 基本リセットとタッチ操作の無効化（アプリ化） */
         * {
@@ -17,7 +17,7 @@
             margin: 0;
             padding: 0;
         }
-        
+
         :root {
             --app-height: 100dvh;
         }
@@ -26,10 +26,10 @@
             background-color: #0f172a; /* slate-900 */
             color: #ffffff;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            
+
             height: 100vh;
             height: var(--app-height);
-            
+
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -38,12 +38,11 @@
             touch-action: none;
             -webkit-user-select: none;
             user-select: none;
-            
+
             padding-top: env(safe-area-inset-top);
             padding-bottom: env(safe-area-inset-bottom);
         }
 
-        /* ヘッダーUI */
         header {
             width: 100%;
             max-width: 440px;
@@ -67,17 +66,16 @@
             font-size: 1.35rem;
             font-weight: 800;
             letter-spacing: 0.1em;
-            color: #22d3ee; /* cyan-400 */
+            color: #22d3ee;
             text-shadow: 0 0 10px rgba(34, 211, 238, 0.3);
         }
         header p {
             font-size: 0.7rem;
-            color: #94a3b8; /* slate-400 */
+            color: #94a3b8;
             margin-top: 4px;
             line-height: 1.3;
         }
 
-        /* メインキャンバス領域 */
         main {
             position: relative;
             width: 100%;
@@ -86,23 +84,22 @@
             align-items: center;
             justify-content: center;
             padding: 12px;
-            max-height: calc(100% - 180px); 
+            max-height: calc(100% - 180px);
         }
-        
+
         .canvas-container {
             position: relative;
             width: 100%;
             max-width: 340px;
             aspect-ratio: 1 / 1;
-            background-color: #020617; /* slate-950 */
+            background-color: #020617;
             border-radius: 24px;
-            border: 1px solid #1e293b; /* slate-800 */
+            border: 1px solid #1e293b;
             overflow: hidden;
             box-shadow: 0 20px 40px -12px rgba(8, 47, 73, 0.6);
             transition: all 0.3s ease;
         }
 
-        /* フルスクリーン表示時のスタイル */
         body.is-fullscreen .canvas-container,
         :fullscreen .canvas-container,
         :-webkit-full-screen .canvas-container {
@@ -116,14 +113,14 @@
             inset: 0;
             z-index: 5;
         }
-        
+
         body.is-fullscreen header,
         body.is-fullscreen .settings-card,
         body.is-fullscreen .btn-secondary {
             opacity: 0.15;
             pointer-events: auto;
         }
-        
+
         body.is-fullscreen header:hover,
         body.is-fullscreen .settings-card:hover {
             opacity: 1;
@@ -135,7 +132,6 @@
             height: 100%;
         }
 
-        /* 許可要求・校正画面オーバーレイ */
         .overlay {
             position: absolute;
             inset: 0;
@@ -202,7 +198,6 @@
             transform: scale(0.97);
         }
 
-        /* 自動校正用カウントダウン画面 */
         #calibrationScreen {
             display: none;
         }
@@ -221,7 +216,6 @@
             transition: width 0.1s linear;
         }
 
-        /* コントロール・フッター */
         footer {
             width: 100%;
             max-width: 440px;
@@ -283,7 +277,6 @@
             box-shadow: 0 0 6px rgba(6, 182, 212, 0.5);
         }
 
-        /* スイッチ（反転用） */
         .toggle-container {
             display: flex;
             justify-content: space-between;
@@ -296,7 +289,7 @@
             width: 44px;
             height: 22px;
         }
-        .switch input { 
+        .switch input {
             opacity: 0;
             width: 0;
             height: 0;
@@ -330,7 +323,6 @@
             background-color: #0f172a;
         }
 
-        /* アクションボタン群 */
         .btn-group {
             display: flex;
             gap: 8px;
@@ -373,7 +365,7 @@
             background-color: #334155;
             color: #ffffff;
         }
-        
+
         .fullscreen-tip {
             display: none;
             position: fixed;
@@ -392,13 +384,47 @@
         body.is-fullscreen .fullscreen-tip {
             display: block;
         }
-        
-        /* バージョン表示用の小さなテキスト */
+
         .footer-version {
             text-align: center;
             font-size: 0.6rem;
             color: #475569;
             margin-top: 4px;
+        }
+
+        .crosshair {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 20;
+        }
+        .crosshair-h, .crosshair-v {
+            position: absolute;
+            background-color: #ef4444;
+        }
+        .crosshair-h {
+            top: 50%;
+            left: 50%;
+            width: 60px;
+            height: 1px;
+            transform: translate(-50%, -50%);
+        }
+        .crosshair-v {
+            top: 50%;
+            left: 50%;
+            width: 1px;
+            height: 60px;
+            transform: translate(-50%, -50%);
+        }
+        .crosshair-circle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 40px;
+            height: 40px;
+            border: 1px solid;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
         }
     </style>
 </head>
@@ -406,27 +432,23 @@
 
     <div class="fullscreen-tip">タップしてフルスクリーンを解除</div>
 
-    <!-- ヘッダーUI -->
     <header id="headerUi">
-        <div class="version-badge">v1.9.0-spatial</div>
+        <div class="version-badge">v2.0.0-dt-physics</div>
         <h1>INERTIAL SPACE</h1>
         <p>スマホを水平に動かすと、描画された空間（座標）がその場に留まり続けます。</p>
     </header>
 
-    <!-- メインシミュレーション領域 -->
     <main>
         <div id="canvasContainer" class="canvas-container">
-            <!-- 画面上固定の「スマートフォンの中心点」（照準器） -->
             <div class="crosshair" style="opacity: 0.3;">
                 <div class="crosshair-h" style="background-color: #ef4444;"></div>
                 <div class="crosshair-v" style="background-color: #ef4444;"></div>
                 <div class="crosshair-circle" style="border-color: #ef4444;"></div>
             </div>
-            
+
             <canvas id="simulationCanvas"></canvas>
         </div>
 
-        <!-- 許可要求画面 -->
         <div id="permissionOverlay" class="overlay">
             <div class="glass-panel">
                 <div class="icon-circle">
@@ -441,7 +463,6 @@
             </div>
         </div>
 
-        <!-- 自動校正画面 (カウントダウン用オーバーレイ) -->
         <div id="calibrationScreen" class="overlay">
             <div class="glass-panel">
                 <div class="icon-circle" style="background-color: rgba(234, 179, 8, 0.1);">
@@ -459,14 +480,13 @@
         </div>
     </main>
 
-    <!-- コントロールパネル -->
     <footer id="footerUi">
         <div class="settings-card">
             <div class="status-row">
                 <span>空間のズレ X: <strong id="valX" class="status-val">0.0 px</strong></span>
                 <span>空間のズレ Y: <strong id="valY" class="status-val">0.0 px</strong></span>
             </div>
-            
+
             <div class="slider-group">
                 <div class="slider-header">
                     <span>補正感度 (同期倍率)</span>
@@ -475,7 +495,6 @@
                 <input id="sensitivitySlider" type="range" min="1.0" max="40.0" step="0.5" value="8.0" class="range-slider">
             </div>
 
-            <!-- 方向反転スイッチ -->
             <div class="toggle-container">
                 <span>移動方向を反転（インバート）</span>
                 <label class="switch">
@@ -484,7 +503,6 @@
                 </label>
             </div>
 
-            <!-- ゴムのような自動引き戻し強さ -->
             <div class="slider-group">
                 <div class="slider-header">
                     <span>ゴム効果 (中心への自動引き戻し強度)</span>
@@ -511,7 +529,7 @@
                 </svg>
                 座標・自動補正をリセット
             </button>
-            
+
             <button id="fullscreenBtn" class="btn-icon">
                 <svg id="fsIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
@@ -519,8 +537,8 @@
                 <span>全画面</span>
             </button>
         </div>
-        
-        <div class="footer-version">Inertial Space App - v1.9.0-spatial</div>
+
+        <div class="footer-version">Inertial Space App - v2.0.0-dt-physics</div>
     </footer>
 
     <script>
@@ -544,8 +562,8 @@
         const invertToggle = document.getElementById('invertToggle');
         const fsIcon = document.getElementById('fsIcon');
 
-        let virtualSize = 400; // 内部の仮想座標系サイズ
-        
+        let virtualSize = 400; // 内部の仮想座標系サイズ (px)
+
         function resizeCanvas() {
             const rect = canvas.getBoundingClientRect();
             const dpr = window.devicePixelRatio || 1;
@@ -554,7 +572,7 @@
             ctx.resetTransform();
             ctx.scale((rect.width * dpr) / virtualSize, (rect.height * dpr) / virtualSize);
         }
-        
+
         window.addEventListener('resize', resizeCanvas);
         window.addEventListener('orientationchange', () => {
             setTimeout(resizeCanvas, 200);
@@ -566,15 +584,17 @@
         window.addEventListener('resize', updateAppHeight);
         updateAppHeight();
 
-        // 空間自体のズレ位置（現実世界に留まっているべき座標のシフト）
+        // ============================================================
+        // 物理状態（すべて px と px/s の単位で統一。dt(秒)で正しく積分する）
+        // ============================================================
         const spaceOffset = {
             x: 0,
             y: 0,
-            vx: 0,
-            vy: 0
+            vx: 0, // px/s
+            vy: 0  // px/s
         };
 
-        // センサーの物理数値
+        // センサーの生値 (m/s^2)
         let rawAccelX = 0;
         let rawAccelY = 0;
         let lastTimestamp = 0;
@@ -585,19 +605,26 @@
         const CALIBRATION_DURATION = 3000; // 初期校正は3秒間
         let calibrationStartTime = 0;
 
-        // センサーのゼロ点（バイアス）
+        // センサーのゼロ点（バイアス, m/s^2）
         let biasX = 0;
         let biasY = 0;
 
-        // 常時動的補正用の統計
+        // 常時動的補正用の統計（静止判定用）
         let recentAccelsX = [];
         let recentAccelsY = [];
         const STATS_WINDOW_SIZE = 120; // 約2秒分のデータを保持して静止を判定
 
         let sensitivity = parseFloat(sensitivitySlider.value);
-        let rubberStrength = parseFloat(rubberSlider.value); // ゴム効果の初期値
-        let friction = parseFloat(frictionSlider.value); 
-        let isInverted = invertToggle.checked; // 反転フラグ
+        let rubberStrength = parseFloat(rubberSlider.value);   // 1秒あたりの引き戻し割合 (0〜1)
+        let frictionSetting = parseFloat(frictionSlider.value); // UI上のスライダー値 (0.70〜0.99, 「1フレームあたり」の感覚値)
+        let isInverted = invertToggle.checked;
+
+        // UIのfriction値（60fps・1フレームあたりの減衰率として設計されていた値）を
+        // フレームレートに依存しない「1秒あたりの減衰率」に変換する。
+        // frictionSetting^60 ≈ 60fps基準で1秒間に何倍まで減衰するか、という係数。
+        function frictionPerSecond(settingValue) {
+            return Math.pow(settingValue, 60);
+        }
 
         sensitivitySlider.addEventListener('input', (e) => {
             sensitivity = parseFloat(e.target.value);
@@ -610,8 +637,8 @@
         });
 
         frictionSlider.addEventListener('input', (e) => {
-            friction = parseFloat(e.target.value);
-            frictionVal.textContent = friction.toFixed(2);
+            frictionSetting = parseFloat(e.target.value);
+            frictionVal.textContent = frictionSetting.toFixed(2);
         });
 
         invertToggle.addEventListener('change', (e) => {
@@ -636,25 +663,21 @@
             }
         });
 
-        // センサーアクセスが許可された後、初期校正シーケンスを開始する
         function triggerCalibration() {
             permissionOverlay.style.opacity = '0';
             setTimeout(() => {
                 permissionOverlay.style.display = 'none';
             }, 300);
 
-            // カウントダウン校正画面を表示
             calibrationScreen.style.display = 'flex';
             calibrationScreen.style.opacity = '1';
 
-            // センサーデータ収集を開始
             window.addEventListener('devicemotion', handleMotion, true);
 
             isCalibrating = true;
             calibrationSamples = [];
             calibrationStartTime = performance.now();
-            
-            // 校正の進捗表示と完了検知用のループを開始
+
             requestAnimationFrame(calibrationLoop);
         }
 
@@ -665,27 +688,24 @@
             const progress = Math.min((elapsed / CALIBRATION_DURATION) * 100, 100);
             calibrationProgress.style.width = `${progress}%`;
 
-            // サンプルを蓄積する
             calibrationSamples.push({x: rawAccelX, y: rawAccelY});
 
             if (elapsed < CALIBRATION_DURATION) {
                 requestAnimationFrame(calibrationLoop);
             } else {
-                // 校正完了：平均値を算出してバイアスとして登録する
                 isCalibrating = false;
-                
+
                 if (calibrationSamples.length > 0) {
                     const sum = calibrationSamples.reduce((acc, sample) => {
                         acc.x += sample.x;
                         acc.y += sample.y;
                         return acc;
                     }, {x: 0, y: 0});
-                    
+
                     biasX = sum.x / calibrationSamples.length;
                     biasY = sum.y / calibrationSamples.length;
                 }
 
-                // 校正画面を非表示にしてメインループへ移行する
                 calibrationScreen.style.opacity = '0';
                 setTimeout(() => {
                     calibrationScreen.style.display = 'none';
@@ -700,15 +720,12 @@
             requestAnimationFrame(loop);
         }
 
-        // デバイスのモーションイベントから生の加速度を取得
         function handleMotion(event) {
             const acc = event.acceleration;
             if (acc) {
-                // 生の重力を除いた加速度
                 rawAccelX = acc.x || 0;
                 rawAccelY = acc.y || 0;
 
-                // 常時動的補正用の配列に格納
                 if (!isCalibrating) {
                     recentAccelsX.push(rawAccelX);
                     recentAccelsY.push(rawAccelY);
@@ -720,12 +737,10 @@
             }
         }
 
-        // 完全に手動で座標および各種ゼロ点をリセットする
         function forceCalibrateAndReset() {
             resetOffset();
             recentAccelsX = [];
             recentAccelsY = [];
-            // 現在の値を強制的にバイアスとする
             biasX = rawAccelX;
             biasY = rawAccelY;
         }
@@ -741,8 +756,8 @@
 
         function toggleFullscreen() {
             const body = document.body;
-            const isFsActive = document.fullscreenElement || 
-                               document.webkitFullscreenElement || 
+            const isFsActive = document.fullscreenElement ||
+                               document.webkitFullscreenElement ||
                                body.classList.contains('is-fullscreen');
 
             if (isFsActive) {
@@ -776,21 +791,53 @@
             }
         });
 
-        // 物理更新と描画のメインループ
+        // ============================================================
+        // 物理更新と描画のメインループ（dtベースの正しい積分）
+        // ============================================================
+        //
+        // 設計方針:
+        //   1. a = 生の加速度 - バイアス  (m/s^2 相当)
+        //   2. デッドゾーンで微小ノイズを除去
+        //   3. 「空間側の見かけの加速度」= -a * sensitivity * PX_PER_UNIT * direction
+        //      （スマホが+方向に動く = 空間は-方向にずれる、なので符号反転がデフォルト）
+        //   4. v += a_effective * dt          ← 加速度の正しい時間積分
+        //   5. 摩擦は 1秒あたりの指数減衰として dt に依存させる: v *= friction_per_sec^dt
+        //   6. x += v * dt                    ← 速度の正しい時間積分
+        //
+        // 「ブレーキ判定」は、加速度の向きが現在の速度と逆向きのときに
+        // 摩擦とは別の追加減衰（ブレーキ係数）を加える形で、無理に速度をゼロに
+        // クランプせず自然に減速するようにしている。
+        //
+        const PX_PER_UNIT = 45; // 加速度1 m/s^2 あたりに与える速度変化の基準スケール
+        const BRAKE_DAMPING_PER_SEC = 6.0; // ブレーキ時の追加減衰の強さ(1秒あたり)
+
         function loop(timestamp) {
-            const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1); 
+            const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1); // 秒。フレーム落ち対策で上限0.1s
             lastTimestamp = timestamp;
 
-            // バイアス（初期ゼロ点）を差し引いた実効加速度
+            if (dt > 0) {
+                updatePhysics(dt);
+            }
+
+            valXEl.textContent = spaceOffset.x.toFixed(1) + ' px';
+            valYEl.textContent = spaceOffset.y.toFixed(1) + ' px';
+
+            render();
+
+            requestAnimationFrame(loop);
+        }
+
+        function updatePhysics(dt) {
+            // 1. バイアス除去
             let processedAccX = rawAccelX - biasX;
             let processedAccY = rawAccelY - biasY;
 
-            // 超低周波カットフィルター（微小ノイズ、手ブレ、ドリフトの除去）
+            // 2. デッドゾーン（微小ノイズ除去）
             const deadzone = 0.08;
             if (Math.abs(processedAccX) < deadzone) processedAccX = 0;
             if (Math.abs(processedAccY) < deadzone) processedAccY = 0;
 
-            // --- 常時自動補正ロジック ---
+            // 3. 常時自動補正（静止判定）: バイアスのゆっくりした追従 + ゴム効果
             if (recentAccelsX.length >= STATS_WINDOW_SIZE) {
                 const minX = Math.min(...recentAccelsX);
                 const maxX = Math.max(...recentAccelsX);
@@ -800,153 +847,106 @@
                 const rangeX = maxX - minX;
                 const rangeY = maxY - minY;
 
-                // 加速度の変化幅が 0.12G 未満であれば完全に静止しているとみなす
                 if (rangeX < 0.12 && rangeY < 0.12) {
-                    // ゆっくりバイアス（ゼロ点）を実測値に追従させて校正値を補正
-                    biasX = biasX * 0.98 + rawAccelX * 0.02;
-                    biasY = biasY * 0.98 + rawAccelY * 0.02;
+                    // バイアスのEMA追従。dtに依存しないようにレート換算(元は1フレーム=1/60s想定の0.02)
+                    const biasLerpPerSec = 1 - Math.pow(1 - 0.02, 60);
+                    const biasLerp = 1 - Math.pow(1 - biasLerpPerSec, dt);
+                    biasX += (rawAccelX - biasX) * biasLerp;
+                    biasY += (rawAccelY - biasY) * biasLerp;
 
-                    // ゴム効果（自動引き戻し）の計算
-                    spaceOffset.x += (0 - spaceOffset.x) * rubberStrength;
-                    spaceOffset.y += (0 - spaceOffset.y) * rubberStrength;
-                    
+                    // ゴム効果（中心への引き戻し）。rubberStrengthは「1秒あたりの引き戻し割合」として扱う
                     if (rubberStrength > 0) {
-                        spaceOffset.vx *= 0.8;
-                        spaceOffset.vy *= 0.8;
+                        const rubberLerp = 1 - Math.pow(1 - rubberStrength, 60 * dt);
+                        spaceOffset.x += (0 - spaceOffset.x) * rubberLerp;
+                        spaceOffset.y += (0 - spaceOffset.y) * rubberLerp;
+
+                        // 引き戻し中は速度も落ち着かせる
+                        const settleDamp = Math.pow(0.2, dt);
+                        spaceOffset.vx *= settleDamp;
+                        spaceOffset.vy *= settleDamp;
                     }
                 }
             }
 
-            // 移動方向（通常は -1、インバート時は 1）
+            // 4. 移動方向（通常は -1、インバート時は 1）
             const directionMultiplier = isInverted ? 1 : -1;
 
-            /*
-              ★ 物理的に正しい2回積分 ＆ 適応型ブレーキ処理へのアップデート ★
-              1. 単位を合わせるための重力加速度換算 (1G = 9.8 m/s²) と、ユーザー感度(sensitivity)を乗算
-              2. 速度積分: vx += accX * dt
-              3. ブレーキ検知時に、逆方向の加速度をブレーキ力(高減衰)として速度をダイナミックに相殺
-              4. 位置積分: x += vx * dt * 変換スケール
-            */
-            const gravityToPixels = 9.8 * 80; // 1Gあたりのピクセル移動スケール調整
-            
-            // 加速度の物理値 (m/s² 基準)
-            const physicalAccX = processedAccX * sensitivity * directionMultiplier;
-            const physicalAccY = processedAccY * sensitivity * directionMultiplier;
+            // 5. 加速度 → 速度の正しい積分 (v += a * dt)
+            const accEffectiveX = processedAccX * sensitivity * PX_PER_UNIT * directionMultiplier;
+            const accEffectiveY = processedAccY * sensitivity * PX_PER_UNIT * directionMultiplier;
 
-            // --- X軸の物理積分 ＆ ブレーキ制御 ---
-            if (physicalAccX !== 0) {
-                // ブレーキ判定：現在速度があり、かつ加速度が現在の速度と逆向きの場合
-                if (spaceOffset.vx !== 0 && Math.sign(physicalAccX) !== Math.sign(spaceOffset.vx)) {
-                    // ブレーキ（逆向きの加速度による急減速）
-                    // 2回積分を壊さずに、逆方向の加速度成分で速度をスムーズかつ急激に減衰させます
-                    spaceOffset.vx += physicalAccX * dt * 2.5; // ブレーキ効率を上げるために倍加
-                    spaceOffset.vx *= 0.75; // 速度の余韻をすばやく吸収
-                    
-                    // 速度が極めて小さくなった、または符号が反転しそうならピタッと止める
-                    if (Math.abs(spaceOffset.vx) < 0.5) {
-                        spaceOffset.vx = 0;
-                    }
-                } else {
-                    // 通常の加速（速度の１回積分）
-                    spaceOffset.vx += physicalAccX * dt;
-                }
-            } else {
-                // 加速度がない場合は、スライダー設定の摩擦（Friction）でゆっくり減速
-                spaceOffset.vx *= (0.1 + friction * 0.9); // 摩擦の感覚をスムーズにする
-                if (Math.abs(spaceOffset.vx) < 0.1) spaceOffset.vx = 0;
+            spaceOffset.vx += accEffectiveX * dt;
+            spaceOffset.vy += accEffectiveY * dt;
+
+            // 6. ブレーキ判定: 加速度の向きが現在の速度と逆のとき、追加で減衰させる
+            //    （無理に0クランプせず、指数減衰で自然に止める）
+            if (accEffectiveX !== 0 && spaceOffset.vx !== 0 && Math.sign(accEffectiveX) !== Math.sign(spaceOffset.vx)) {
+                spaceOffset.vx *= Math.pow(1 / (1 + BRAKE_DAMPING_PER_SEC), dt);
+            }
+            if (accEffectiveY !== 0 && spaceOffset.vy !== 0 && Math.sign(accEffectiveY) !== Math.sign(spaceOffset.vy)) {
+                spaceOffset.vy *= Math.pow(1 / (1 + BRAKE_DAMPING_PER_SEC), dt);
             }
 
-            // --- Y軸の物理積分 ＆ ブレーキ制御 ---
-            // Y軸は画面座標（下方向がプラス）なので符号の向きを補正
-            const adjustedPhysicalAccY = -physicalAccY; 
+            // 7. 通常の摩擦減衰（加速度がゼロの間、速度は徐々に減衰する）
+            //    friction_per_sec は「1秒間でどれだけ減衰するか」。dt秒分だけ累乗して適用する。
+            const fps = frictionPerSecond(frictionSetting);
+            const frictionFactor = Math.pow(fps, dt);
+            spaceOffset.vx *= frictionFactor;
+            spaceOffset.vy *= frictionFactor;
 
-            if (adjustedPhysicalAccY !== 0) {
-                // ブレーキ判定
-                if (spaceOffset.vy !== 0 && Math.sign(adjustedPhysicalAccY) !== Math.sign(spaceOffset.vy)) {
-                    // ブレーキ
-                    spaceOffset.vy += adjustedPhysicalAccY * dt * 2.5;
-                    spaceOffset.vy *= 0.75;
-                    
-                    if (Math.abs(spaceOffset.vy) < 0.5) {
-                        spaceOffset.vy = 0;
-                    }
-                } else {
-                    // 通常の加速
-                    spaceOffset.vy += adjustedPhysicalAccY * dt;
-                }
-            } else {
-                spaceOffset.vy *= (0.1 + friction * 0.9);
-                if (Math.abs(spaceOffset.vy) < 0.1) spaceOffset.vy = 0;
-            }
+            // 極小速度はゼロに丸めてジッターを防ぐ
+            if (Math.abs(spaceOffset.vx) < 0.05) spaceOffset.vx = 0;
+            if (Math.abs(spaceOffset.vy) < 0.05) spaceOffset.vy = 0;
 
-            // 速度から位置（座標ズレ）への積分 (リーク積分によるドリフト低減)
-            // dt を掛け算することで、フレームレートに依存しない完全な等速移動を再現します
-            const leakyFactor = 0.999; // 1フレームごとにごくわずかに中央ににじみ寄る（物理的な蓄積誤差を自然に抜くリーク積分）
-            spaceOffset.x = (spaceOffset.x + spaceOffset.vx * dt * gravityToPixels) * leakyFactor;
-            spaceOffset.y = (spaceOffset.y + spaceOffset.vy * dt * gravityToPixels) * leakyFactor;
-
-            // 画面表示用に現在位置を更新
-            valXEl.textContent = spaceOffset.x.toFixed(1) + ' px';
-            valYEl.textContent = spaceOffset.y.toFixed(1) + ' px';
-
-            // 描画
-            render();
-
-            requestAnimationFrame(loop);
+            // 8. 速度 → 位置の正しい積分 (x += v * dt)
+            spaceOffset.x += spaceOffset.vx * dt;
+            spaceOffset.y += spaceOffset.vy * dt;
         }
 
         function render() {
             ctx.clearRect(0, 0, virtualSize, virtualSize);
 
-            // 画面の基準中央座標
             const centerX = virtualSize / 2;
             const centerY = virtualSize / 2;
 
-            // キャンバスの状態を保存して、移動した空間全体をずらして描画する
             ctx.save();
             ctx.translate(spaceOffset.x, spaceOffset.y);
 
-            // 1. その場所に留まり続ける背景のグリッドを描画
-            ctx.strokeStyle = '#1e293b'; // slate-800
+            // 1. その場所に留まり続ける背景のグリッド
+            ctx.strokeStyle = '#1e293b';
             ctx.lineWidth = 1.5;
             const step = 40;
-            // 座標がどれだけ大きく動いても隙間ができないよう、描画領域を特大に拡張
             const extra = 2500;
             for (let i = -extra; i <= virtualSize + extra; i += step) {
-                // 縦線
                 ctx.beginPath();
                 ctx.moveTo(i, -extra);
                 ctx.lineTo(i, virtualSize + extra);
                 ctx.stroke();
 
-                // 横線
                 ctx.beginPath();
                 ctx.moveTo(-extra, i);
                 ctx.lineTo(virtualSize + extra, i);
                 ctx.stroke();
             }
 
-            // 2. その場所に留まり続ける中心の「青い点」（現実空間のマーカー）
+            // 2. 現実空間のマーカー（中心の青い点）
             ctx.beginPath();
             ctx.arc(centerX, centerY, 10, 0, Math.PI * 2);
-            ctx.fillStyle = '#22d3ee'; // cyan-400
+            ctx.fillStyle = '#22d3ee';
             ctx.fill();
 
-            // 青い点を強調する同心円
             ctx.strokeStyle = 'rgba(34, 211, 238, 0.4)';
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(centerX, centerY, 25, 0, Math.PI * 2);
             ctx.stroke();
 
-            // 空間のランドマークを複数配置し、ズレていることが視覚的にハッキリわかるようにする
-            ctx.fillStyle = '#334155'; // slate-700
+            ctx.fillStyle = '#334155';
             const landmarks = [
                 {x: centerX - 100, y: centerY - 100, size: 4},
                 {x: centerX + 100, y: centerY - 100, size: 4},
                 {x: centerX - 100, y: centerY + 100, size: 4},
                 {x: centerX + 100, y: centerY + 100, size: 4},
-                // より遠くのランドマーク
                 {x: centerX - 300, y: centerY - 300, size: 6},
                 {x: centerX + 300, y: centerY - 300, size: 6},
                 {x: centerX - 300, y: centerY + 300, size: 6},
@@ -958,21 +958,20 @@
                 ctx.fill();
             });
 
-            // ずらした描画空間をリセット
             ctx.restore();
 
-            // 3. 画面に固定された基準ガイド（スマートフォンの実体を表す赤い照準器）
-            ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; // red-500
+            // 3. 画面固定の基準ガイド（赤い照準器）
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
             ctx.lineWidth = 1.5;
             ctx.setLineDash([2, 4]);
-            
+
             ctx.beginPath();
             ctx.arc(centerX, centerY, 40, 0, Math.PI * 2);
             ctx.stroke();
             ctx.setLineDash([]);
         }
 
-        // PCブラウザや非対応端末での擬似ドラッグ操作（空間をドラッグして動かす感覚）
+        // PCブラウザでの擬似ドラッグ操作（空間をドラッグして動かす感覚のテスト用）
         let dragging = false;
         let lastMouseX = 0;
         let lastMouseY = 0;
@@ -984,7 +983,7 @@
         });
 
         window.addEventListener('mouseup', () => dragging = false);
-        
+
         canvas.addEventListener('mousemove', (e) => {
             if (!dragging || document.body.classList.contains('is-fullscreen')) return;
             const dx = e.clientX - lastMouseX;
@@ -992,18 +991,12 @@
             lastMouseX = e.clientX;
             lastMouseY = e.clientY;
 
-            // ドラッグした分だけ、直感的な方向へ空間をずらす
             const dragMultiplier = isInverted ? -1.5 : 1.5;
             spaceOffset.x += dx * dragMultiplier;
             spaceOffset.y += dy * dragMultiplier;
+            spaceOffset.vx = 0;
+            spaceOffset.vy = 0;
         });
-
-        canvas.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 0 || document.body.classList.contains('is-fullscreen')) return;
-            // モバイルのタッチ時には自動シミュレートを穏やかに加算
-            accelX = (Math.random() - 0.5) * 5;
-            accelY = (Math.random() - 0.5) * 5;
-        }, { passive: true });
 
         // 警告モーダル
         function showCustomAlert(message) {
