@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="InertialSpace">
     
-    <title>空間慣性シミュレーター v1.6.0-spatial</title>
+    <title>空間慣性シミュレーター v1.7.0-spatial</title>
     <style>
         /* 基本リセットとタッチ操作の無効化（アプリ化） */
         * {
@@ -54,12 +54,12 @@
         }
         .version-badge {
             background-color: #1e293b;
-            color: #38bdf8;
+            color: #22d3ee;
             font-size: 0.65rem;
             font-weight: 700;
             padding: 2px 8px;
             border-radius: 9999px;
-            border: 1px solid rgba(56, 189, 248, 0.2);
+            border: 1px solid rgba(34, 211, 238, 0.3);
             display: inline-block;
             margin-bottom: 4px;
         }
@@ -408,7 +408,7 @@
 
     <!-- ヘッダーUI -->
     <header id="headerUi">
-        <div class="version-badge">v1.6.0-spatial</div>
+        <div class="version-badge">v1.7.0-spatial</div>
         <h1>INERTIAL SPACE</h1>
         <p>スマホを水平に動かすと、描画された空間（座標）がその場に留まり続けます。</p>
     </header>
@@ -470,9 +470,9 @@
             <div class="slider-group">
                 <div class="slider-header">
                     <span>補正感度 (同期倍率)</span>
-                    <span id="sensitivityVal" class="status-val">5.0x</span>
+                    <span id="sensitivityVal" class="status-val">8.0x</span>
                 </div>
-                <input id="sensitivitySlider" type="range" min="1.0" max="35.0" step="0.5" value="5.0" class="range-slider">
+                <input id="sensitivitySlider" type="range" min="1.0" max="40.0" step="0.5" value="8.0" class="range-slider">
             </div>
 
             <!-- 方向反転スイッチ -->
@@ -496,9 +496,9 @@
             <div class="slider-group">
                 <div class="slider-header">
                     <span>物理慣性の減衰抵抗 (滑らかさ)</span>
-                    <span id="frictionVal" class="status-val">0.96</span>
+                    <span id="frictionVal" class="status-val">0.92</span>
                 </div>
-                <input id="frictionSlider" type="range" min="0.80" max="0.99" step="0.01" value="0.96" class="range-slider">
+                <input id="frictionSlider" type="range" min="0.70" max="0.99" step="0.01" value="0.92" class="range-slider">
             </div>
         </div>
 
@@ -520,7 +520,7 @@
             </button>
         </div>
         
-        <div class="footer-version">Inertial Space App - v1.6.0-spatial</div>
+        <div class="footer-version">Inertial Space App - v1.7.0-spatial</div>
     </footer>
 
     <script>
@@ -785,9 +785,11 @@
             let processedAccX = rawAccelX - biasX;
             let processedAccY = rawAccelY - biasY;
 
-            // 微小なノイズ（デッドゾーン）の除去
-            if (Math.abs(processedAccX) < 0.05) processedAccX = 0;
-            if (Math.abs(processedAccY) < 0.05) processedAccY = 0;
+            // 超低周波カットフィルター（微小ノイズ、手ブレ、ドリフトの除去）
+            // これにより、スマホを完全に静止させた時に勝手に流れる現象を強力に抑えます。
+            const deadzone = 0.08;
+            if (Math.abs(processedAccX) < deadzone) processedAccX = 0;
+            if (Math.abs(processedAccY) < deadzone) processedAccY = 0;
 
             // --- 常時自動補正ロジック ---
             if (recentAccelsX.length >= STATS_WINDOW_SIZE) {
@@ -799,14 +801,13 @@
                 const rangeX = maxX - minX;
                 const rangeY = maxY - minY;
 
-                // 加速度の変化幅が 0.15G 未満であれば完全に静止しているとみなす
-                if (rangeX < 0.15 && rangeY < 0.15) {
-                    // ゆっくりバイアス（ゼロ点）を実測値に追従させる（静止時のズレ自動修正）
+                // 加速度の変化幅が 0.12G 未満であれば完全に静止しているとみなす
+                if (rangeX < 0.12 && rangeY < 0.12) {
+                    // ゆっくりバイアス（ゼロ点）を実測値に追従させて校正値を補正
                     biasX = biasX * 0.98 + rawAccelX * 0.02;
                     biasY = biasY * 0.98 + rawAccelY * 0.02;
 
-                    // ゴム効果（自動引き戻し）の計算。ユーザー設定の「rubberStrength」を乗算
-                    // rubberStrength が 0 の場合、引き戻しは完全に無効化されます。
+                    // ゴム効果（自動引き戻し）の計算
                     spaceOffset.x += (0 - spaceOffset.x) * rubberStrength;
                     spaceOffset.y += (0 - spaceOffset.y) * rubberStrength;
                     
@@ -818,21 +819,32 @@
             }
 
             // 移動方向（通常は -1、インバート時は 1）
+            // iOSは右への平行スライドで acc.x がプラス、上（前）へのスライドで acc.y がプラス。
+            // 空間の元の場所に点を留めるためには、移動方向と逆方向に座標を動かす必要があります。
             const directionMultiplier = isInverted ? 1 : -1;
 
-            // 加速度から速度への積分
-            const forceMultiplier = 1500; // ピクセル等倍表示用
-            const movementX = processedAccX * sensitivity * forceMultiplier * directionMultiplier; 
-            const movementY = processedAccY * sensitivity * forceMultiplier * directionMultiplier;  
+            /*
+              ★ 物理演算の最適化（1回積分型インパルスマッピング） ★
+              2回積分（加速度→速度→位置）だと「加速」と「止まるときの減速（逆向きの加速度）」が
+              完全に相殺して元の位置に引き戻されてしまうため、加速度を直接「推進速度」として
+              1回積分させ、摩擦（減衰抵抗）でブレーキをかけるモデルに改良しました。
+            */
+            const baseForceMultiplier = 40; // 空間の滑らかなずれに最適なスケールファクター
+            
+            // 加速度の瞬間パルスを、そのまま空間の移動速度へとマッピング
+            const targetVx = processedAccX * sensitivity * baseForceMultiplier * directionMultiplier;
+            const targetVy = processedAccY * sensitivity * baseForceMultiplier * directionMultiplier;
 
-            spaceOffset.vx += movementX * dt;
-            spaceOffset.vy -= movementY * dt; // Y軸方向を画面座標に適合
+            // 加速度から速度へマージ（ローパスフィルターを通してノイズを平滑化）
+            spaceOffset.vx = spaceOffset.vx * 0.3 + targetVx * 0.7;
+            spaceOffset.vy = spaceOffset.vy * 0.3 + targetVy * 0.7;
 
             // 速度から位置（座標ズレ）への積分
-            spaceOffset.x += spaceOffset.vx * dt;
-            spaceOffset.y += spaceOffset.vy * dt;
+            // Y軸は画面座標系（下がプラス）に適合させるため、減算ではなく加算で正確に同期
+            spaceOffset.x += spaceOffset.vx;
+            spaceOffset.y += spaceOffset.vy;
 
-            // 速度に対する減衰抵抗（摩擦）
+            // 速度に対する減衰抵抗（摩擦）。これによって減速時の逆向きの力を吸収し、その場に留まります。
             spaceOffset.vx *= friction;
             spaceOffset.vy *= friction;
 
