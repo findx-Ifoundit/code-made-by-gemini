@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="InertialDot">
     
-    <title>慣性シミュレーター (オフライン対応版)</title>
+    <title>空間慣性シミュレーター (座標追従版)</title>
     <style>
         /* 基本リセットとタッチ操作の無効化（アプリ化） */
         * {
@@ -19,7 +19,6 @@
         }
         
         :root {
-            /* ツールバーの干渉を防ぐ動的ビューポート単位 */
             --app-height: 100dvh;
         }
 
@@ -28,7 +27,6 @@
             color: #ffffff;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             
-            /* 動的ビューポートを優先し、非対応環境では100vhにフォールバック */
             height: 100vh;
             height: var(--app-height);
             
@@ -41,7 +39,6 @@
             -webkit-user-select: none;
             user-select: none;
             
-            /* iPhoneのノッチ/セーフエリア対策 */
             padding-top: env(safe-area-inset-top);
             padding-bottom: env(safe-area-inset-bottom);
         }
@@ -49,7 +46,7 @@
         /* ヘッダーUI */
         header {
             width: 100%;
-            max-w: 440px;
+            max-width: 440px;
             padding: 16px 24px 8px 24px;
             text-align: center;
             z-index: 10;
@@ -78,7 +75,6 @@
             align-items: center;
             justify-content: center;
             padding: 12px;
-            /* フルスクリーン時に中央配置を維持 */
             max-height: calc(100% - 180px); 
         }
         
@@ -95,7 +91,7 @@
             transition: all 0.3s ease;
         }
 
-        /* 疑似・および本物のフルスクリーン表示に対応するスタイル */
+        /* フルスクリーン表示時のスタイル */
         body.is-fullscreen .canvas-container,
         :fullscreen .canvas-container,
         :-webkit-full-screen .canvas-container {
@@ -113,48 +109,19 @@
         body.is-fullscreen header,
         body.is-fullscreen .settings-card,
         body.is-fullscreen .btn-secondary {
-            opacity: 0.15; /* フルスクリーン中はUIを薄くして没入感を高める */
-            pointer-events: auto; /* タップ操作は可能にする */
+            opacity: 0.15;
+            pointer-events: auto;
         }
         
         body.is-fullscreen header:hover,
         body.is-fullscreen .settings-card:hover {
-            opacity: 1; /* ホバーやタッチ時に表示を戻す */
+            opacity: 1;
         }
 
         canvas {
             display: block;
             width: 100%;
             height: 100%;
-        }
-
-        /* 中央の基準十字ガイド */
-        .crosshair {
-            position: absolute;
-            inset: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            pointer-events: none;
-            opacity: 0.15;
-        }
-        .crosshair-h {
-            width: 100%;
-            height: 1px;
-            background-color: #94a3b8;
-        }
-        .crosshair-v {
-            position: absolute;
-            height: 100%;
-            width: 1px;
-            background-color: #94a3b8;
-        }
-        .crosshair-circle {
-            position: absolute;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            border: 1px solid #94a3b8;
         }
 
         /* 許可画面オーバーレイ（グラスモフィズム） */
@@ -173,7 +140,7 @@
         .glass-panel {
             max-width: 320px;
             padding: 32px 24px;
-            background: rgba(30, 41, 59, 0.7); /* slate-800 blur */
+            background: rgba(30, 41, 59, 0.7);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -209,7 +176,7 @@
         .btn-primary {
             width: 100%;
             padding: 12px 24px;
-            background-color: #06b6d4; /* cyan-500 */
+            background-color: #06b6d4;
             color: #0f172a;
             font-weight: 700;
             border: none;
@@ -245,7 +212,6 @@
             gap: 10px;
             font-size: 0.75rem;
             color: #cbd5e1;
-            transition: opacity 0.3s;
         }
         .status-row {
             display: flex;
@@ -331,7 +297,6 @@
             color: #ffffff;
         }
         
-        /* フルスクリーン表示時のフローティング操作ガイド */
         .fullscreen-tip {
             display: none;
             position: fixed;
@@ -354,29 +319,28 @@
 </head>
 <body>
 
-    <!-- フルスクリーン時のヒント -->
     <div class="fullscreen-tip">タップしてフルスクリーンを解除</div>
 
     <!-- ヘッダーUI -->
     <header id="headerUi">
-        <h1>INERTIAL DOT</h1>
-        <p>スマホを水平に動かすと、点はその場（元の座標）に留まり続けます。</p>
+        <h1>INERTIAL SPACE</h1>
+        <p>スマホを水平に動かすと、描画された空間（座標）がその場に留まり続けます。</p>
     </header>
 
     <!-- メインシミュレーション領域 -->
     <main>
         <div id="canvasContainer" class="canvas-container">
-            <!-- 十字ガイド -->
-            <div class="crosshair">
-                <div class="crosshair-h"></div>
-                <div class="crosshair-v"></div>
-                <div class="crosshair-circle"></div>
+            <!-- 画面上固定の「スマートフォンの中心点」（照準器） -->
+            <div class="crosshair" style="opacity: 0.3;">
+                <div class="crosshair-h" style="background-color: #ef4444;"></div>
+                <div class="crosshair-v" style="background-color: #ef4444;"></div>
+                <div class="crosshair-circle" style="border-color: #ef4444;"></div>
             </div>
             
             <canvas id="simulationCanvas"></canvas>
         </div>
 
-        <!-- 許可要求画面（iOS対策） -->
+        <!-- 許可要求画面 -->
         <div id="permissionOverlay" class="overlay">
             <div class="glass-panel">
                 <div class="icon-circle">
@@ -385,8 +349,8 @@
                         <line x1="12" y1="18" x2="12.01" y2="18"></line>
                     </svg>
                 </div>
-                <h2>センサーの有効化</h2>
-                <p>iPhoneのモーションセンサーを使用して、動かした方向と逆向きに点を移動します。</p>
+                <h2>モーションセンサーの有効化</h2>
+                <p>iPhoneの加速度センサーを使用して、端末の移動量に応じて座標空間を逆方向に精密にずらします。</p>
                 <button id="startBtn" class="btn-primary">センサーを許可して開始</button>
             </div>
         </div>
@@ -396,13 +360,13 @@
     <footer id="footerUi">
         <div class="settings-card">
             <div class="status-row">
-                <span>左右 (ロール): <strong id="valX" class="status-val">0.00°</strong></span>
-                <span>前後 (ピッチ): <strong id="valY" class="status-val">0.00°</strong></span>
+                <span>空間のズレ X: <strong id="valX" class="status-val">0.0 px</strong></span>
+                <span>空間のズレ Y: <strong id="valY" class="status-val">0.0 px</strong></span>
             </div>
             
             <div class="slider-group">
                 <div class="slider-header">
-                    <span>センサー感度 (追従強さ)</span>
+                    <span>補正感度 (座標の同期倍率)</span>
                     <span id="sensitivityVal" class="status-val">1.5x</span>
                 </div>
                 <input id="sensitivitySlider" type="range" min="0.5" max="4.0" step="0.1" value="1.5" class="range-slider">
@@ -410,42 +374,39 @@
 
             <div class="slider-group">
                 <div class="slider-header">
-                    <span>摩擦係数 (留まりやすさ)</span>
-                    <span id="frictionVal" class="status-val">0.95</span>
+                    <span>自動復元力 (中心へのゆっくりとした引き戻し)</span>
+                    <span id="frictionVal" class="status-val">0.05</span>
                 </div>
-                <input id="frictionSlider" type="range" min="0.80" max="0.99" step="0.01" value="0.95" class="range-slider">
+                <input id="frictionSlider" type="range" min="0.01" max="0.20" step="0.01" value="0.05" class="range-slider">
             </div>
         </div>
 
         <div class="btn-group">
             <button id="calibrateBtn" class="btn-secondary">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="16"></line>
+                    <line x1="8" y1="12" x2="16" y2="12"></line>
                 </svg>
-                水平を記憶
+                座標を初期位置に戻す
             </button>
             
-            <!-- フルスクリーン切り替えボタン -->
             <button id="fullscreenBtn" class="btn-icon">
                 <svg id="fsIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
                 </svg>
                 <span>全画面</span>
             </button>
-            
-            <button id="resetBtn" class="btn-icon">クリア</button>
         </div>
     </footer>
 
     <script>
-        // DOM要素のバインド
         const canvas = document.getElementById('simulationCanvas');
         const ctx = canvas.getContext('2d');
         const canvasContainer = document.getElementById('canvasContainer');
         const permissionOverlay = document.getElementById('permissionOverlay');
         const startBtn = document.getElementById('startBtn');
         const calibrateBtn = document.getElementById('calibrateBtn');
-        const resetBtn = document.getElementById('resetBtn');
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const valXEl = document.getElementById('valX');
         const valYEl = document.getElementById('valY');
@@ -455,75 +416,65 @@
         const frictionVal = document.getElementById('frictionVal');
         const fsIcon = document.getElementById('fsIcon');
 
-        // デバイスピクセル比に合わせたスケーリングとリサイズ処理
         let virtualSize = 400; // 内部の仮想座標系サイズ
         
         function resizeCanvas() {
             const rect = canvas.getBoundingClientRect();
             const dpr = window.devicePixelRatio || 1;
-            
-            // 実際のピクセル数を設定して高解像度化
             canvas.width = rect.width * dpr;
             canvas.height = rect.height * dpr;
-            
-            // 仮想座標系(400x400)に合わせてコンテキストをスケール
             ctx.resetTransform();
             ctx.scale((rect.width * dpr) / virtualSize, (rect.height * dpr) / virtualSize);
         }
         
-        // リサイズ時や回転時に追従
         window.addEventListener('resize', resizeCanvas);
         window.addEventListener('orientationchange', () => {
             setTimeout(resizeCanvas, 200);
         });
 
-        // 動的ビューポート高さ（100dvh）のバグ回避用処理
         function updateAppHeight() {
             document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
         }
         window.addEventListener('resize', updateAppHeight);
         updateAppHeight();
 
-        // 慣性ボールの物理ステート
-        const dot = {
-            x: virtualSize / 2,
-            y: virtualSize / 2,
+        // 空間自体のズレ位置 (現実世界に留まっているべき座標のシフト)
+        // offsetX, offsetY は「カメラがどれだけ動いたか」を示し、描画時に逆方向に動かします
+        const spaceOffset = {
+            x: 0,
+            y: 0,
             vx: 0,
-            vy: 0,
-            radius: 12,
-            color: '#22d3ee',
-            trail: []
+            vy: 0
         };
 
-        // センサー状態
-        let sensorX = 0;
-        let sensorY = 0;
-        let offsetBaseX = 0;
-        let offsetBaseY = 0;
+        // センサーの物理数値
+        let accelX = 0;
+        let accelY = 0;
+        let lastTimestamp = 0;
 
         let sensitivity = parseFloat(sensitivitySlider.value);
-        let friction = parseFloat(frictionSlider.value);
+        // ドリフト防止のための復元力（少しずつ原点に戻る性質を入れないとセンサーノイズで際限なくズレてしまいます）
+        let springStrength = parseFloat(frictionSlider.value); 
 
-        // 各種コントロールイベント
         sensitivitySlider.addEventListener('input', (e) => {
             sensitivity = parseFloat(e.target.value);
             sensitivityVal.textContent = sensitivity.toFixed(1) + 'x';
         });
 
         frictionSlider.addEventListener('input', (e) => {
-            friction = parseFloat(e.target.value);
-            frictionVal.textContent = friction.toFixed(2);
+            springStrength = parseFloat(e.target.value);
+            frictionVal.textContent = springStrength.toFixed(2);
         });
 
-        // センサー開始シーケンス
         startBtn.addEventListener('click', async () => {
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            // iOS 13+ 用のモーションアクセス許可
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
                 try {
-                    const permissionState = await DeviceOrientationEvent.requestPermission();
+                    const permissionState = await DeviceMotionEvent.requestPermission();
                     if (permissionState === 'granted') {
                         startSystem();
                     } else {
-                        showCustomAlert('モーションセンサーの許可が必要です。端末の設定アプリからブラウザの権限を確認してください。');
+                        showCustomAlert('モーションセンサーの許可が必要です。');
                     }
                 } catch (error) {
                     console.error('Error:', error);
@@ -542,43 +493,35 @@
 
             resizeCanvas();
 
-            window.addEventListener('deviceorientation', handleOrientation, true);
+            // 「devicemotion」から重力を除いた加速度を取得する
+            window.addEventListener('devicemotion', handleMotion, true);
 
-            // 安定するまで少し待ってからキャリブレーション
-            setTimeout(() => {
-                calibrate();
-            }, 500);
-
+            lastTimestamp = performance.now();
             requestAnimationFrame(loop);
         }
 
-        function handleOrientation(event) {
-            if (event.beta !== null && event.gamma !== null) {
-                sensorX = event.gamma; // ロール (左右)
-                sensorY = event.beta;  // ピッチ (前後)
+        function handleMotion(event) {
+            // 重力加速度を除去した純粋なスマホの動き（加速度）
+            const acc = event.acceleration;
+            if (acc) {
+                // iPhoneを右に平行移動させると、acc.xは「正の加速度（右向き）」を検出します。
+                // 画面を逆（左）へ等しく移動させるための情報を渡します。
+                accelX = acc.x || 0;
+                accelY = acc.y || 0;
             }
         }
 
-        function calibrate() {
-            offsetBaseX = sensorX;
-            offsetBaseY = sensorY;
+        function resetOffset() {
+            spaceOffset.x = 0;
+            spaceOffset.y = 0;
+            spaceOffset.vx = 0;
+            spaceOffset.vy = 0;
         }
 
-        calibrateBtn.addEventListener('click', calibrate);
+        calibrateBtn.addEventListener('click', resetOffset);
 
-        resetBtn.addEventListener('click', () => {
-            dot.x = virtualSize / 2;
-            dot.y = virtualSize / 2;
-            dot.vx = 0;
-            dot.vy = 0;
-            dot.trail = [];
-        });
-
-        // ★ W3C / iOS webkit 仕様に準拠した最新のFullscreen API呼び出し
         function toggleFullscreen() {
             const body = document.body;
-            
-            // すでにフルスクリーン状態（または疑似フルスクリーン状態）なら解除
             const isFsActive = document.fullscreenElement || 
                                document.webkitFullscreenElement || 
                                body.classList.contains('is-fullscreen');
@@ -586,37 +529,21 @@
             if (isFsActive) {
                 body.classList.remove('is-fullscreen');
                 fsIcon.innerHTML = `<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>`;
-                
                 if (document.exitFullscreen) {
                     document.exitFullscreen().catch(() => {});
                 } else if (document.webkitExitFullscreen) {
                     document.webkitExitFullscreen();
                 }
-                
                 setTimeout(resizeCanvas, 150);
                 return;
             }
 
-            // フルスクリーンの有効化（標準API + iOS等WebKitプレフィックス）
+            body.classList.add('is-fullscreen');
             const docEl = document.documentElement;
             if (docEl.requestFullscreen) {
-                docEl.requestFullscreen().then(() => {
-                    body.classList.add('is-fullscreen');
-                }).catch(() => {
-                    // 標準APIが拒否、もしくは対応していない場合は疑似フルスクリーンにフォールバック
-                    body.classList.add('is-fullscreen');
-                });
+                docEl.requestFullscreen().catch(() => {});
             } else if (docEl.webkitRequestFullscreen) {
-                // iPhone/Safari等の旧WebKit形式
-                try {
-                    docEl.webkitRequestFullscreen();
-                    body.classList.add('is-fullscreen');
-                } catch (e) {
-                    body.classList.add('is-fullscreen');
-                }
-            } else {
-                // 完全非対応デバイス（iOS通常ブラウザ）は即座に疑似フルスクリーンを適用
-                body.classList.add('is-fullscreen');
+                try { docEl.webkitRequestFullscreen(); } catch (e) {}
             }
 
             fsIcon.innerHTML = `<path d="M4 14h6v6m10-6h-6v6M4 10h6V4m10 6h-6V4"></path>`;
@@ -624,28 +551,164 @@
         }
 
         fullscreenBtn.addEventListener('click', toggleFullscreen);
-        
-        // フルスクリーン中、画面タップで元の画面に戻りやすくする
-        canvasContainer.addEventListener('click', (e) => {
+        canvasContainer.addEventListener('click', () => {
             if (document.body.classList.contains('is-fullscreen')) {
                 toggleFullscreen();
             }
         });
 
-        // フルスクリーン状態がAPI側から解除された際のイベント検知
-        const fsChangeEvents = ['fullscreenchange', 'webkitfullscreenchange'];
-        fsChangeEvents.forEach(evtName => {
-            document.addEventListener(evtName, () => {
-                const isFs = document.fullscreenElement || document.webkitFullscreenElement;
-                if (!isFs) {
-                    document.body.classList.remove('is-fullscreen');
-                    fsIcon.innerHTML = `<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>`;
-                    setTimeout(resizeCanvas, 150);
-                }
+        // 物理更新と描画のループ
+        function loop(timestamp) {
+            // 経過時間の計算（秒単位）
+            const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1); 
+            lastTimestamp = timestamp;
+
+            /*
+              ★ 空間（座標）をその場に固定するロジック ★
+              iPhoneを「右」に動かしたとき：
+                1. センサーは右への加速度 (accelX > 0) を検出。
+                2. スマホが右へ移動した分だけ、画面上の「背景グリッドや物体の座標」を「左方向（負の方向）」に等しくシフトする。
+                3. これによって、現実世界から見ると描画されたグリッド・ドットが「元の場所に全く動かずに留まる」。
+            */
+            // 加速度から速度へ積分
+            // iOSの軸方向: X軸(右プラス)、Y軸(上プラス ※devicemotionは上がプラス、ピッチとは異なる)
+            // 空間をその場に維持するためには、移動と反対方向に座標をずらす
+            const movementX = -accelX * sensitivity * 100; // スケールをピクセル単位に調整
+            const movementY = accelY * sensitivity * 100;  // iOSはYが逆になりやすいため調整
+
+            spaceOffset.vx += movementX * dt;
+            spaceOffset.vy += movementY * dt;
+
+            // 速度から変位（座標のズレ）へ積分
+            spaceOffset.x += spaceOffset.vx * dt;
+            spaceOffset.y += spaceOffset.vy * dt;
+
+            // 速度に対する摩擦（自然な減衰）
+            spaceOffset.vx *= 0.92;
+            spaceOffset.vy *= 0.92;
+
+            // センサー誤差の蓄積（ドリフト現象）を防ぐための復元力
+            // テーブルの上に置いたスマホが静止した際、ゆっくりと空間の中心が同期されます
+            spaceOffset.x += (0 - spaceOffset.x) * springStrength;
+            spaceOffset.y += (0 - spaceOffset.y) * springStrength;
+
+            // 画面表示用に現在位置を更新
+            valXEl.textContent = spaceOffset.x.toFixed(1) + ' px';
+            valYEl.textContent = spaceOffset.y.toFixed(1) + ' px';
+
+            // 描画
+            render();
+
+            requestAnimationFrame(loop);
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, virtualSize, virtualSize);
+
+            // 画面の基準中央座標
+            const centerX = virtualSize / 2;
+            const centerY = virtualSize / 2;
+
+            // キャンバスの状態を保存して、移動した空間全体を「逆」にずらして描画する
+            ctx.save();
+            // spaceOffsetの分だけ空間全体の描画位置をずらす
+            ctx.translate(spaceOffset.x, spaceOffset.y);
+
+            // 1. その場所に留まり続ける背景のグリッドを描画
+            ctx.strokeStyle = '#1e293b'; // slate-800
+            ctx.lineWidth = 1.5;
+            const step = 40;
+            // ズレても線が切れないように、画面外（広めの範囲）までグリッドを描画
+            const extra = 200;
+            for (let i = -extra; i <= virtualSize + extra; i += step) {
+                // 縦線
+                ctx.beginPath();
+                ctx.moveTo(i, -extra);
+                ctx.lineTo(i, virtualSize + extra);
+                ctx.stroke();
+
+                // 横線
+                ctx.beginPath();
+                ctx.moveTo(-extra, i);
+                ctx.lineTo(virtualSize + extra, i);
+                ctx.stroke();
+            }
+
+            // 2. その場所に留まり続ける中心の「青い点」（机の元の位置を代表するマーク）
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 10, 0, Math.PI * 2);
+            ctx.fillStyle = '#22d3ee'; // cyan-400
+            ctx.fill();
+
+            // 青い点をさらに強調する同心円
+            ctx.strokeStyle = 'rgba(34, 211, 238, 0.4)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 25, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // 周囲にいくつかの静止オブジェクト（空間のランドマーク）を散りばめる
+            ctx.fillStyle = '#334155'; // slate-700
+            const landmarks = [
+                {x: centerX - 100, y: centerY - 100, size: 4},
+                {x: centerX + 100, y: centerY - 100, size: 4},
+                {x: centerX - 100, y: centerY + 100, size: 4},
+                {x: centerX + 100, y: centerY + 100, size: 4}
+            ];
+            landmarks.forEach(lm => {
+                ctx.beginPath();
+                ctx.arc(lm.x, lm.y, lm.size, 0, Math.PI * 2);
+                ctx.fill();
             });
+
+            // ずらした描画空間をリセット
+            ctx.restore();
+
+            // 3. 画面に固定された基準ガイド（スマートフォンの実体を表す赤い照準器）
+            // 赤いパーツは移動せず常に画面中央（スマホの現在位置）に固定
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; // red-500
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([2, 4]);
+            
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 40, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // PCブラウザや非対応端末での擬似ドラッグ操作（空間をドラッグして動かす感覚）
+        let dragging = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+
+        canvas.addEventListener('mousedown', (e) => {
+            dragging = true;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
         });
 
-        // シンプルなカスタム警告モーダル
+        window.addEventListener('mouseup', () => dragging = false);
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (!dragging || document.body.classList.contains('is-fullscreen')) return;
+            const dx = e.clientX - lastMouseX;
+            const dy = e.clientY - lastMouseY;
+            lastMouseX = e.clientX;
+            lastMouseY = e.clientY;
+
+            // マウスを動かした分だけ「座標（空間）」を即時に移動
+            spaceOffset.x += dx * 0.8;
+            spaceOffset.y += dy * 0.8;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 0 || document.body.classList.contains('is-fullscreen')) return;
+            // 簡易的に空間に擬似的な振動を与える
+            accelX = (Math.random() - 0.5) * 4;
+            accelY = (Math.random() - 0.5) * 4;
+        }, { passive: true });
+
+        // メッセージを表示する関数
         function showCustomAlert(message) {
             const alertBox = document.createElement('div');
             alertBox.style.position = 'fixed';
@@ -679,132 +742,6 @@
             alertBox.appendChild(closeBtn);
 
             document.body.appendChild(alertBox);
-        }
-
-        // 物理計算ループ
-        function loop() {
-            let targetX = sensorX - offsetBaseX;
-            let targetY = sensorY - offsetBaseY;
-
-            if (isNaN(targetX)) targetX = 0;
-            if (isNaN(targetY)) targetY = 0;
-
-            // 数値表示
-            valXEl.textContent = targetX.toFixed(2) + '°';
-            valYEl.textContent = targetY.toFixed(2) + '°';
-
-            // 逆方向の慣性物理。スマホを右に傾けたら点は左へ
-            const accelerationForceX = -targetX * 0.05 * sensitivity;
-            const accelerationForceY = -targetY * 0.05 * sensitivity;
-
-            dot.vx += accelerationForceX;
-            dot.vy += accelerationForceY;
-
-            dot.vx *= friction;
-            dot.vy *= friction;
-
-            dot.x += dot.vx;
-            dot.y += dot.vy;
-
-            // 跳ね返り処理
-            const bounciness = -0.5;
-            if (dot.x < dot.radius) {
-                dot.x = dot.radius;
-                dot.vx *= bounciness;
-            } else if (dot.x > virtualSize - dot.radius) {
-                dot.x = virtualSize - dot.radius;
-                dot.vx *= bounciness;
-            }
-
-            if (dot.y < dot.radius) {
-                dot.y = dot.radius;
-                dot.vy *= bounciness;
-            } else if (dot.y > virtualSize - dot.radius) {
-                dot.y = virtualSize - dot.radius;
-                dot.vy *= bounciness;
-            }
-
-            // 残像
-            dot.trail.push({ x: dot.x, y: dot.y });
-            if (dot.trail.length > 8) {
-                dot.trail.shift();
-            }
-
-            render();
-
-            requestAnimationFrame(loop);
-        }
-
-        function render() {
-            ctx.clearRect(0, 0, virtualSize, virtualSize);
-
-            // 背景の固定位置グリッド線
-            ctx.strokeStyle = '#111827';
-            ctx.lineWidth = 1;
-            const step = 40;
-            for (let i = 0; i <= virtualSize; i += step) {
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.lineTo(i, virtualSize);
-                ctx.stroke();
-
-                ctx.beginPath();
-                ctx.moveTo(0, i);
-                ctx.lineTo(virtualSize, i);
-                ctx.stroke();
-            }
-
-            // トレイル
-            for (let i = 0; i < dot.trail.length; i++) {
-                const pos = dot.trail[i];
-                const opacity = (i + 1) / dot.trail.length * 0.35;
-                ctx.beginPath();
-                ctx.arc(pos.x, pos.y, dot.radius * (i / dot.trail.length + 0.2), 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(34, 211, 238, ${opacity})`;
-                ctx.fill();
-            }
-
-            // ボール本体
-            ctx.beginPath();
-            ctx.arc(dot.x, dot.y, dot.radius, 0, Math.PI * 2);
-            ctx.fillStyle = dot.color;
-            ctx.fill();
-
-            // ソフトグロー
-            ctx.beginPath();
-            ctx.arc(dot.x, dot.y, dot.radius + 6, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(34, 211, 238, 0.15)';
-            ctx.fill();
-
-            // センター目安円
-            ctx.setLineDash([4, 4]);
-            ctx.strokeStyle = 'rgba(34, 211, 238, 0.25)';
-            ctx.beginPath();
-            ctx.arc(virtualSize / 2, virtualSize / 2, 40, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-
-        // PC/デバッグ操作用
-        let dragging = false;
-        canvas.addEventListener('mousedown', () => dragging = true);
-        window.addEventListener('mouseup', () => dragging = false);
-        
-        canvas.addEventListener('mousemove', (e) => {
-            if (!dragging || document.body.classList.contains('is-fullscreen')) return;
-            simulateSensor(e, canvas.getBoundingClientRect());
-        });
-
-        canvas.addEventListener('touchmove', (e) => {
-            if (e.touches.length === 0 || document.body.classList.contains('is-fullscreen')) return;
-            simulateSensor(e.touches[0], canvas.getBoundingClientRect());
-        }, { passive: true });
-
-        function simulateSensor(eventData, rect) {
-            const x = eventData.clientX - rect.left;
-            const y = eventData.clientY - rect.top;
-            sensorX = ((x / rect.width) - 0.5) * 60;
-            sensorY = ((y / rect.height) - 0.5) * 60;
         }
     </script>
 </body>
