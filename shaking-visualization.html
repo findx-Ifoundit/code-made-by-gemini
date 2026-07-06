@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="InertialDot">
     
-    <title>空間慣性シミュレーター (座標追従版)</title>
+    <title>空間慣性シミュレーター (高感度・オフライン版)</title>
     <style>
         /* 基本リセットとタッチ操作の無効化（アプリ化） */
         * {
@@ -367,17 +367,17 @@
             <div class="slider-group">
                 <div class="slider-header">
                     <span>補正感度 (座標の同期倍率)</span>
-                    <span id="sensitivityVal" class="status-val">1.5x</span>
+                    <span id="sensitivityVal" class="status-val">5.0x</span>
                 </div>
-                <input id="sensitivitySlider" type="range" min="0.5" max="4.0" step="0.1" value="1.5" class="range-slider">
+                <input id="sensitivitySlider" type="range" min="1.0" max="25.0" step="0.5" value="5.0" class="range-slider">
             </div>
 
             <div class="slider-group">
                 <div class="slider-header">
-                    <span>自動復元力 (中心へのゆっくりとした引き戻し)</span>
-                    <span id="frictionVal" class="status-val">0.05</span>
+                    <span>空間の減衰抵抗 (ドリフトを抑える滑らかさ)</span>
+                    <span id="frictionVal" class="status-val">0.96</span>
                 </div>
-                <input id="frictionSlider" type="range" min="0.01" max="0.20" step="0.01" value="0.05" class="range-slider">
+                <input id="frictionSlider" type="range" min="0.80" max="0.99" step="0.01" value="0.96" class="range-slider">
             </div>
         </div>
 
@@ -439,7 +439,6 @@
         updateAppHeight();
 
         // 空間自体のズレ位置 (現実世界に留まっているべき座標のシフト)
-        // offsetX, offsetY は「カメラがどれだけ動いたか」を示し、描画時に逆方向に動かします
         const spaceOffset = {
             x: 0,
             y: 0,
@@ -453,8 +452,7 @@
         let lastTimestamp = 0;
 
         let sensitivity = parseFloat(sensitivitySlider.value);
-        // ドリフト防止のための復元力（少しずつ原点に戻る性質を入れないとセンサーノイズで際限なくズレてしまいます）
-        let springStrength = parseFloat(frictionSlider.value); 
+        let friction = parseFloat(frictionSlider.value); 
 
         sensitivitySlider.addEventListener('input', (e) => {
             sensitivity = parseFloat(e.target.value);
@@ -462,8 +460,8 @@
         });
 
         frictionSlider.addEventListener('input', (e) => {
-            springStrength = parseFloat(e.target.value);
-            frictionVal.textContent = springStrength.toFixed(2);
+            friction = parseFloat(e.target.value);
+            frictionVal.textContent = friction.toFixed(2);
         });
 
         startBtn.addEventListener('click', async () => {
@@ -501,11 +499,9 @@
         }
 
         function handleMotion(event) {
-            // 重力加速度を除去した純粋なスマホの動き（加速度）
             const acc = event.acceleration;
             if (acc) {
-                // iPhoneを右に平行移動させると、acc.xは「正の加速度（右向き）」を検出します。
-                // 画面を逆（左）へ等しく移動させるための情報を渡します。
+                // 加速度の値を取得
                 accelX = acc.x || 0;
                 accelY = acc.y || 0;
             }
@@ -559,38 +555,30 @@
 
         // 物理更新と描画のループ
         function loop(timestamp) {
-            // 経過時間の計算（秒単位）
             const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1); 
             lastTimestamp = timestamp;
 
             /*
-              ★ 空間（座標）をその場に固定するロジック ★
-              iPhoneを「右」に動かしたとき：
-                1. センサーは右への加速度 (accelX > 0) を検出。
-                2. スマホが右へ移動した分だけ、画面上の「背景グリッドや物体の座標」を「左方向（負の方向）」に等しくシフトする。
-                3. これによって、現実世界から見ると描画されたグリッド・ドットが「元の場所に全く動かずに留まる」。
+              ★ 空間（座標）をその場に固定する高感度物理ロジック ★
+              センサー感度の乗数を大幅に向上させ、より俊敏でダイナミックな変位を再現。
+              （加速度1G = 9.8m/s^2 に対し、感度係数を大きくして画面ピクセルへ投影）
             */
-            // 加速度から速度へ積分
-            // iOSの軸方向: X軸(右プラス)、Y軸(上プラス ※devicemotionは上がプラス、ピッチとは異なる)
-            // 空間をその場に維持するためには、移動と反対方向に座標をずらす
-            const movementX = -accelX * sensitivity * 100; // スケールをピクセル単位に調整
-            const movementY = accelY * sensitivity * 100;  // iOSはYが逆になりやすいため調整
+            // 感度をよりダイナミックに反映させるため、基礎乗数を引き上げ
+            const movementX = -accelX * sensitivity * 1500; 
+            const movementY = accelY * sensitivity * 1500;  
 
+            // 加速度を速度へ積分
             spaceOffset.vx += movementX * dt;
             spaceOffset.vy += movementY * dt;
 
-            // 速度から変位（座標のズレ）へ積分
+            // 速度を位置（座標ズレ）へ積分
             spaceOffset.x += spaceOffset.vx * dt;
             spaceOffset.y += spaceOffset.vy * dt;
 
-            // 速度に対する摩擦（自然な減衰）
-            spaceOffset.vx *= 0.92;
-            spaceOffset.vy *= 0.92;
-
-            // センサー誤差の蓄積（ドリフト現象）を防ぐための復元力
-            // テーブルの上に置いたスマホが静止した際、ゆっくりと空間の中心が同期されます
-            spaceOffset.x += (0 - spaceOffset.x) * springStrength;
-            spaceOffset.y += (0 - spaceOffset.y) * springStrength;
+            // 速度に対する減衰抵抗（摩擦）の適用。
+            // ※「勝手に中心に戻る引き戻し(復元力)」は完全に撤廃しました。
+            spaceOffset.vx *= friction;
+            spaceOffset.vy *= friction;
 
             // 画面表示用に現在位置を更新
             valXEl.textContent = spaceOffset.x.toFixed(1) + ' px';
@@ -611,15 +599,14 @@
 
             // キャンバスの状態を保存して、移動した空間全体を「逆」にずらして描画する
             ctx.save();
-            // spaceOffsetの分だけ空間全体の描画位置をずらす
             ctx.translate(spaceOffset.x, spaceOffset.y);
 
             // 1. その場所に留まり続ける背景のグリッドを描画
             ctx.strokeStyle = '#1e293b'; // slate-800
             ctx.lineWidth = 1.5;
             const step = 40;
-            // ズレても線が切れないように、画面外（広めの範囲）までグリッドを描画
-            const extra = 200;
+            // 座標がどれだけ大きく動いても隙間ができないよう、描画領域を特大に拡張
+            const extra = 2000;
             for (let i = -extra; i <= virtualSize + extra; i += step) {
                 // 縦線
                 ctx.beginPath();
@@ -634,26 +621,31 @@
                 ctx.stroke();
             }
 
-            // 2. その場所に留まり続ける中心の「青い点」（机の元の位置を代表するマーク）
+            // 2. その場所に留まり続ける中心の「青い点」（現実空間のマーカー）
             ctx.beginPath();
             ctx.arc(centerX, centerY, 10, 0, Math.PI * 2);
             ctx.fillStyle = '#22d3ee'; // cyan-400
             ctx.fill();
 
-            // 青い点をさらに強調する同心円
+            // 青い点を強調する同心円
             ctx.strokeStyle = 'rgba(34, 211, 238, 0.4)';
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(centerX, centerY, 25, 0, Math.PI * 2);
             ctx.stroke();
 
-            // 周囲にいくつかの静止オブジェクト（空間のランドマーク）を散りばめる
+            // 空間のランドマークを複数配置し、ズレていることが視覚的にハッキリわかるようにする
             ctx.fillStyle = '#334155'; // slate-700
             const landmarks = [
                 {x: centerX - 100, y: centerY - 100, size: 4},
                 {x: centerX + 100, y: centerY - 100, size: 4},
                 {x: centerX - 100, y: centerY + 100, size: 4},
-                {x: centerX + 100, y: centerY + 100, size: 4}
+                {x: centerX + 100, y: centerY + 100, size: 4},
+                // より遠くのランドマーク
+                {x: centerX - 300, y: centerY - 300, size: 6},
+                {x: centerX + 300, y: centerY - 300, size: 6},
+                {x: centerX - 300, y: centerY + 300, size: 6},
+                {x: centerX + 300, y: centerY + 300, size: 6}
             ];
             landmarks.forEach(lm => {
                 ctx.beginPath();
@@ -665,7 +657,6 @@
             ctx.restore();
 
             // 3. 画面に固定された基準ガイド（スマートフォンの実体を表す赤い照準器）
-            // 赤いパーツは移動せず常に画面中央（スマホの現在位置）に固定
             ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)'; // red-500
             ctx.lineWidth = 1.5;
             ctx.setLineDash([2, 4]);
@@ -696,19 +687,19 @@
             lastMouseX = e.clientX;
             lastMouseY = e.clientY;
 
-            // マウスを動かした分だけ「座標（空間）」を即時に移動
-            spaceOffset.x += dx * 0.8;
-            spaceOffset.y += dy * 0.8;
+            // ドラッグした分だけ、現実的な感度で空間座標を直接動かせるように
+            spaceOffset.x += dx * 1.5;
+            spaceOffset.y += dy * 1.5;
         });
 
         canvas.addEventListener('touchmove', (e) => {
             if (e.touches.length === 0 || document.body.classList.contains('is-fullscreen')) return;
-            // 簡易的に空間に擬似的な振動を与える
-            accelX = (Math.random() - 0.5) * 4;
-            accelY = (Math.random() - 0.5) * 4;
+            // 擬似モーションを加算
+            accelX = (Math.random() - 0.5) * 8;
+            accelY = (Math.random() - 0.5) * 8;
         }, { passive: true });
 
-        // メッセージを表示する関数
+        // 警告モーダル
         function showCustomAlert(message) {
             const alertBox = document.createElement('div');
             alertBox.style.position = 'fixed';
