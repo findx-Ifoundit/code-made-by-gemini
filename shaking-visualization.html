@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- iPhone (iOS Safari) で「ホーム画面に追加」した時に完全フルスクリーンにするための設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="InertialDot">
+    
+    <title>慣性シミュレーター (オフライン対応版)</title>
+    <style>
+        /* 基本リセットとタッチ操作の無効化（アプリ化） */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        :root {
+            /* ツールバーの干渉を防ぐ動的ビューポート単位 */
+            --app-height: 100dvh;
+        }
+
+        body {
+            background-color: #0f172a; /* slate-900 */
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            
+            /* 動的ビューポートを優先し、非対応環境では100vhにフォールバック */
+            height: 100vh;
+            height: var(--app-height);
+            
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            overflow: hidden;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            
+            /* iPhoneのノッチ/セーフエリア対策 */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        /* ヘッダーUI */
+        header {
+            width: 100%;
+            max-w: 440px;
+            padding: 16px 24px 8px 24px;
+            text-align: center;
+            z-index: 10;
+            transition: opacity 0.3s ease;
+        }
+        header h1 {
+            font-size: 1.35rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            color: #22d3ee; /* cyan-400 */
+            text-shadow: 0 0 10px rgba(34, 211, 238, 0.3);
+        }
+        header p {
+            font-size: 0.7rem;
+            color: #94a3b8; /* slate-400 */
+            margin-top: 4px;
+            line-height: 1.3;
+        }
+
+        /* メインキャンバス領域 */
+        main {
+            position: relative;
+            width: 100%;
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+            /* フルスクリーン時に中央配置を維持 */
+            max-height: calc(100% - 180px); 
+        }
+        
+        .canvas-container {
+            position: relative;
+            width: 100%;
+            max-width: 340px;
+            aspect-ratio: 1 / 1;
+            background-color: #020617; /* slate-950 */
+            border-radius: 24px;
+            border: 1px solid #1e293b; /* slate-800 */
+            overflow: hidden;
+            box-shadow: 0 20px 40px -12px rgba(8, 47, 73, 0.6);
+            transition: all 0.3s ease;
+        }
+
+        /* 疑似・および本物のフルスクリーン表示に対応するスタイル */
+        body.is-fullscreen .canvas-container,
+        :fullscreen .canvas-container,
+        :-webkit-full-screen .canvas-container {
+            max-width: 100vw;
+            max-height: 100dvh;
+            width: 100vw;
+            height: 100dvh;
+            border-radius: 0;
+            border: none;
+            position: fixed;
+            inset: 0;
+            z-index: 5;
+        }
+        
+        body.is-fullscreen header,
+        body.is-fullscreen .settings-card,
+        body.is-fullscreen .btn-secondary {
+            opacity: 0.15; /* フルスクリーン中はUIを薄くして没入感を高める */
+            pointer-events: auto; /* タップ操作は可能にする */
+        }
+        
+        body.is-fullscreen header:hover,
+        body.is-fullscreen .settings-card:hover {
+            opacity: 1; /* ホバーやタッチ時に表示を戻す */
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 中央の基準十字ガイド */
+        .crosshair {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            opacity: 0.15;
+        }
+        .crosshair-h {
+            width: 100%;
+            height: 1px;
+            background-color: #94a3b8;
+        }
+        .crosshair-v {
+            position: absolute;
+            height: 100%;
+            width: 1px;
+            background-color: #94a3b8;
+        }
+        .crosshair-circle {
+            position: absolute;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1px solid #94a3b8;
+        }
+
+        /* 許可画面オーバーレイ（グラスモフィズム） */
+        .overlay {
+            position: absolute;
+            inset: 0;
+            background-color: rgba(2, 6, 23, 0.95);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            text-align: center;
+            z-index: 30;
+            transition: opacity 0.3s ease;
+        }
+        .glass-panel {
+            max-width: 320px;
+            padding: 32px 24px;
+            background: rgba(30, 41, 59, 0.7); /* slate-800 blur */
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        }
+        .icon-circle {
+            width: 64px;
+            height: 64px;
+            background-color: rgba(34, 211, 238, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 16px auto;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 1; }
+        }
+        .glass-panel h2 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .glass-panel p {
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+        .btn-primary {
+            width: 100%;
+            padding: 12px 24px;
+            background-color: #06b6d4; /* cyan-500 */
+            color: #0f172a;
+            font-weight: 700;
+            border: none;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .btn-primary:active {
+            background-color: #22d3ee;
+            transform: scale(0.97);
+        }
+
+        /* コントロール・フッター */
+        footer {
+            width: 100%;
+            max-width: 440px;
+            padding: 0 24px 20px 24px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: opacity 0.3s ease;
+        }
+        .settings-card {
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid #1e293b;
+            border-radius: 16px;
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            font-size: 0.75rem;
+            color: #cbd5e1;
+            transition: opacity 0.3s;
+        }
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid #1e293b;
+            padding-bottom: 6px;
+        }
+        .status-val {
+            color: #22d3ee;
+            font-weight: 700;
+        }
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+        }
+        .range-slider {
+            width: 100%;
+            height: 6px;
+            background: #1e293b;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 4px 0;
+        }
+        .range-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #06b6d4;
+            cursor: pointer;
+            box-shadow: 0 0 6px rgba(6, 182, 212, 0.5);
+        }
+
+        /* アクションボタン群 */
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+        .btn-secondary {
+            flex: 2;
+            padding: 12px;
+            background-color: #1e293b;
+            color: #ffffff;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background-color 0.2s, opacity 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .btn-secondary:active {
+            background-color: #334155;
+        }
+        .btn-icon {
+            flex: 1;
+            padding: 12px;
+            background-color: #1e293b;
+            color: #94a3b8;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+        .btn-icon:active {
+            background-color: #334155;
+            color: #ffffff;
+        }
+        
+        /* フルスクリーン表示時のフローティング操作ガイド */
+        .fullscreen-tip {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.8);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            color: #94a3b8;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            pointer-events: none;
+            z-index: 100;
+        }
+        body.is-fullscreen .fullscreen-tip {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- フルスクリーン時のヒント -->
+    <div class="fullscreen-tip">タップしてフルスクリーンを解除</div>
+
+    <!-- ヘッダーUI -->
+    <header id="headerUi">
+        <h1>INERTIAL DOT</h1>
+        <p>スマホを水平に動かすと、点はその場（元の座標）に留まり続けます。</p>
+    </header>
+
+    <!-- メインシミュレーション領域 -->
+    <main>
+        <div id="canvasContainer" class="canvas-container">
+            <!-- 十字ガイド -->
+            <div class="crosshair">
+                <div class="crosshair-h"></div>
+                <div class="crosshair-v"></div>
+                <div class="crosshair-circle"></div>
+            </div>
+            
+            <canvas id="simulationCanvas"></canvas>
+        </div>
+
+        <!-- 許可要求画面（iOS対策） -->
+        <div id="permissionOverlay" class="overlay">
+            <div class="glass-panel">
+                <div class="icon-circle">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                        <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                    </svg>
+                </div>
+                <h2>センサーの有効化</h2>
+                <p>iPhoneのモーションセンサーを使用して、動かした方向と逆向きに点を移動します。</p>
+                <button id="startBtn" class="btn-primary">センサーを許可して開始</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- コントロールパネル -->
+    <footer id="footerUi">
+        <div class="settings-card">
+            <div class="status-row">
+                <span>左右 (ロール): <strong id="valX" class="status-val">0.00°</strong></span>
+                <span>前後 (ピッチ): <strong id="valY" class="status-val">0.00°</strong></span>
+            </div>
+            
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span>センサー感度 (追従強さ)</span>
+                    <span id="sensitivityVal" class="status-val">1.5x</span>
+                </div>
+                <input id="sensitivitySlider" type="range" min="0.5" max="4.0" step="0.1" value="1.5" class="range-slider">
+            </div>
+
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span>摩擦係数 (留まりやすさ)</span>
+                    <span id="frictionVal" class="status-val">0.95</span>
+                </div>
+                <input id="frictionSlider" type="range" min="0.80" max="0.99" step="0.01" value="0.95" class="range-slider">
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button id="calibrateBtn" class="btn-secondary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
+                水平を記憶
+            </button>
+            
+            <!-- フルスクリーン切り替えボタン -->
+            <button id="fullscreenBtn" class="btn-icon">
+                <svg id="fsIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                </svg>
+                <span>全画面</span>
+            </button>
+            
+            <button id="resetBtn" class="btn-icon">クリア</button>
+        </div>
+    </footer>
+
+    <script>
+        // DOM要素のバインド
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const canvasContainer = document.getElementById('canvasContainer');
+        const permissionOverlay = document.getElementById('permissionOverlay');
+        const startBtn = document.getElementById('startBtn');
+        const calibrateBtn = document.getElementById('calibrateBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const fullscreenBtn = document.getElementById('fullscreenBtn');
+        const valXEl = document.getElementById('valX');
+        const valYEl = document.getElementById('valY');
+        const sensitivitySlider = document.getElementById('sensitivitySlider');
+        const sensitivityVal = document.getElementById('sensitivityVal');
+        const frictionSlider = document.getElementById('frictionSlider');
+        const frictionVal = document.getElementById('frictionVal');
+        const fsIcon = document.getElementById('fsIcon');
+
+        // デバイスピクセル比に合わせたスケーリングとリサイズ処理
+        let virtualSize = 400; // 内部の仮想座標系サイズ
+        
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            
+            // 実際のピクセル数を設定して高解像度化
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            
+            // 仮想座標系(400x400)に合わせてコンテキストをスケール
+            ctx.resetTransform();
+            ctx.scale((rect.width * dpr) / virtualSize, (rect.height * dpr) / virtualSize);
+        }
+        
+        // リサイズ時や回転時に追従
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', () => {
+            setTimeout(resizeCanvas, 200);
+        });
+
+        // 動的ビューポート高さ（100dvh）のバグ回避用処理
+        function updateAppHeight() {
+            document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+        }
+        window.addEventListener('resize', updateAppHeight);
+        updateAppHeight();
+
+        // 慣性ボールの物理ステート
+        const dot = {
+            x: virtualSize / 2,
+            y: virtualSize / 2,
+            vx: 0,
+            vy: 0,
+            radius: 12,
+            color: '#22d3ee',
+            trail: []
+        };
+
+        // センサー状態
+        let sensorX = 0;
+        let sensorY = 0;
+        let offsetBaseX = 0;
+        let offsetBaseY = 0;
+
+        let sensitivity = parseFloat(sensitivitySlider.value);
+        let friction = parseFloat(frictionSlider.value);
+
+        // 各種コントロールイベント
+        sensitivitySlider.addEventListener('input', (e) => {
+            sensitivity = parseFloat(e.target.value);
+            sensitivityVal.textContent = sensitivity.toFixed(1) + 'x';
+        });
+
+        frictionSlider.addEventListener('input', (e) => {
+            friction = parseFloat(e.target.value);
+            frictionVal.textContent = friction.toFixed(2);
+        });
+
+        // センサー開始シーケンス
+        startBtn.addEventListener('click', async () => {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permissionState = await DeviceOrientationEvent.requestPermission();
+                    if (permissionState === 'granted') {
+                        startSystem();
+                    } else {
+                        showCustomAlert('モーションセンサーの許可が必要です。端末の設定アプリからブラウザの権限を確認してください。');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    startSystem();
+                }
+            } else {
+                startSystem();
+            }
+        });
+
+        function startSystem() {
+            permissionOverlay.style.opacity = '0';
+            setTimeout(() => {
+                permissionOverlay.style.display = 'none';
+            }, 300);
+
+            resizeCanvas();
+
+            window.addEventListener('deviceorientation', handleOrientation, true);
+
+            // 安定するまで少し待ってからキャリブレーション
+            setTimeout(() => {
+                calibrate();
+            }, 500);
+
+            requestAnimationFrame(loop);
+        }
+
+        function handleOrientation(event) {
+            if (event.beta !== null && event.gamma !== null) {
+                sensorX = event.gamma; // ロール (左右)
+                sensorY = event.beta;  // ピッチ (前後)
+            }
+        }
+
+        function calibrate() {
+            offsetBaseX = sensorX;
+            offsetBaseY = sensorY;
+        }
+
+        calibrateBtn.addEventListener('click', calibrate);
+
+        resetBtn.addEventListener('click', () => {
+            dot.x = virtualSize / 2;
+            dot.y = virtualSize / 2;
+            dot.vx = 0;
+            dot.vy = 0;
+            dot.trail = [];
+        });
+
+        // ★ W3C / iOS webkit 仕様に準拠した最新のFullscreen API呼び出し
+        function toggleFullscreen() {
+            const body = document.body;
+            
+            // すでにフルスクリーン状態（または疑似フルスクリーン状態）なら解除
+            const isFsActive = document.fullscreenElement || 
+                               document.webkitFullscreenElement || 
+                               body.classList.contains('is-fullscreen');
+
+            if (isFsActive) {
+                body.classList.remove('is-fullscreen');
+                fsIcon.innerHTML = `<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>`;
+                
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+                
+                setTimeout(resizeCanvas, 150);
+                return;
+            }
+
+            // フルスクリーンの有効化（標準API + iOS等WebKitプレフィックス）
+            const docEl = document.documentElement;
+            if (docEl.requestFullscreen) {
+                docEl.requestFullscreen().then(() => {
+                    body.classList.add('is-fullscreen');
+                }).catch(() => {
+                    // 標準APIが拒否、もしくは対応していない場合は疑似フルスクリーンにフォールバック
+                    body.classList.add('is-fullscreen');
+                });
+            } else if (docEl.webkitRequestFullscreen) {
+                // iPhone/Safari等の旧WebKit形式
+                try {
+                    docEl.webkitRequestFullscreen();
+                    body.classList.add('is-fullscreen');
+                } catch (e) {
+                    body.classList.add('is-fullscreen');
+                }
+            } else {
+                // 完全非対応デバイス（iOS通常ブラウザ）は即座に疑似フルスクリーンを適用
+                body.classList.add('is-fullscreen');
+            }
+
+            fsIcon.innerHTML = `<path d="M4 14h6v6m10-6h-6v6M4 10h6V4m10 6h-6V4"></path>`;
+            setTimeout(resizeCanvas, 150);
+        }
+
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+        
+        // フルスクリーン中、画面タップで元の画面に戻りやすくする
+        canvasContainer.addEventListener('click', (e) => {
+            if (document.body.classList.contains('is-fullscreen')) {
+                toggleFullscreen();
+            }
+        });
+
+        // フルスクリーン状態がAPI側から解除された際のイベント検知
+        const fsChangeEvents = ['fullscreenchange', 'webkitfullscreenchange'];
+        fsChangeEvents.forEach(evtName => {
+            document.addEventListener(evtName, () => {
+                const isFs = document.fullscreenElement || document.webkitFullscreenElement;
+                if (!isFs) {
+                    document.body.classList.remove('is-fullscreen');
+                    fsIcon.innerHTML = `<path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>`;
+                    setTimeout(resizeCanvas, 150);
+                }
+            });
+        });
+
+        // シンプルなカスタム警告モーダル
+        function showCustomAlert(message) {
+            const alertBox = document.createElement('div');
+            alertBox.style.position = 'fixed';
+            alertBox.style.top = '50%';
+            alertBox.style.left = '50%';
+            alertBox.style.transform = 'translate(-50%, -50%)';
+            alertBox.style.backgroundColor = '#1e293b';
+            alertBox.style.border = '1px solid #06b6d4';
+            alertBox.style.borderRadius = '16px';
+            alertBox.style.padding = '24px';
+            alertBox.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+            alertBox.style.zIndex = '1000';
+            alertBox.style.maxWidth = '300px';
+            alertBox.style.width = '90%';
+            alertBox.style.textAlign = 'center';
+            alertBox.style.color = '#ffffff';
+
+            const text = document.createElement('p');
+            text.textContent = message;
+            text.style.fontSize = '0.9rem';
+            text.style.marginBottom = '16px';
+            text.style.lineHeight = '1.4';
+            alertBox.appendChild(text);
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '閉じる';
+            closeBtn.className = 'btn-primary';
+            closeBtn.onclick = () => {
+                document.body.removeChild(alertBox);
+            };
+            alertBox.appendChild(closeBtn);
+
+            document.body.appendChild(alertBox);
+        }
+
+        // 物理計算ループ
+        function loop() {
+            let targetX = sensorX - offsetBaseX;
+            let targetY = sensorY - offsetBaseY;
+
+            if (isNaN(targetX)) targetX = 0;
+            if (isNaN(targetY)) targetY = 0;
+
+            // 数値表示
+            valXEl.textContent = targetX.toFixed(2) + '°';
+            valYEl.textContent = targetY.toFixed(2) + '°';
+
+            // 逆方向の慣性物理。スマホを右に傾けたら点は左へ
+            const accelerationForceX = -targetX * 0.05 * sensitivity;
+            const accelerationForceY = -targetY * 0.05 * sensitivity;
+
+            dot.vx += accelerationForceX;
+            dot.vy += accelerationForceY;
+
+            dot.vx *= friction;
+            dot.vy *= friction;
+
+            dot.x += dot.vx;
+            dot.y += dot.vy;
+
+            // 跳ね返り処理
+            const bounciness = -0.5;
+            if (dot.x < dot.radius) {
+                dot.x = dot.radius;
+                dot.vx *= bounciness;
+            } else if (dot.x > virtualSize - dot.radius) {
+                dot.x = virtualSize - dot.radius;
+                dot.vx *= bounciness;
+            }
+
+            if (dot.y < dot.radius) {
+                dot.y = dot.radius;
+                dot.vy *= bounciness;
+            } else if (dot.y > virtualSize - dot.radius) {
+                dot.y = virtualSize - dot.radius;
+                dot.vy *= bounciness;
+            }
+
+            // 残像
+            dot.trail.push({ x: dot.x, y: dot.y });
+            if (dot.trail.length > 8) {
+                dot.trail.shift();
+            }
+
+            render();
+
+            requestAnimationFrame(loop);
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, virtualSize, virtualSize);
+
+            // 背景の固定位置グリッド線
+            ctx.strokeStyle = '#111827';
+            ctx.lineWidth = 1;
+            const step = 40;
+            for (let i = 0; i <= virtualSize; i += step) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, virtualSize);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(0, i);
+                ctx.lineTo(virtualSize, i);
+                ctx.stroke();
+            }
+
+            // トレイル
+            for (let i = 0; i < dot.trail.length; i++) {
+                const pos = dot.trail[i];
+                const opacity = (i + 1) / dot.trail.length * 0.35;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, dot.radius * (i / dot.trail.length + 0.2), 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(34, 211, 238, ${opacity})`;
+                ctx.fill();
+            }
+
+            // ボール本体
+            ctx.beginPath();
+            ctx.arc(dot.x, dot.y, dot.radius, 0, Math.PI * 2);
+            ctx.fillStyle = dot.color;
+            ctx.fill();
+
+            // ソフトグロー
+            ctx.beginPath();
+            ctx.arc(dot.x, dot.y, dot.radius + 6, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(34, 211, 238, 0.15)';
+            ctx.fill();
+
+            // センター目安円
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = 'rgba(34, 211, 238, 0.25)';
+            ctx.beginPath();
+            ctx.arc(virtualSize / 2, virtualSize / 2, 40, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // PC/デバッグ操作用
+        let dragging = false;
+        canvas.addEventListener('mousedown', () => dragging = true);
+        window.addEventListener('mouseup', () => dragging = false);
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (!dragging || document.body.classList.contains('is-fullscreen')) return;
+            simulateSensor(e, canvas.getBoundingClientRect());
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (e.touches.length === 0 || document.body.classList.contains('is-fullscreen')) return;
+            simulateSensor(e.touches[0], canvas.getBoundingClientRect());
+        }, { passive: true });
+
+        function simulateSensor(eventData, rect) {
+            const x = eventData.clientX - rect.left;
+            const y = eventData.clientY - rect.top;
+            sensorX = ((x / rect.width) - 0.5) * 60;
+            sensorY = ((y / rect.height) - 0.5) * 60;
+        }
+    </script>
+</body>
+</html>
