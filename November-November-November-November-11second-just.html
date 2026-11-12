@@ -163,7 +163,7 @@
             gachaText.classList.add('loading-pulse');
             gachaText.textContent = "同期中...";
             try {
-                const response = await fetch('https://adachi.2237yh.net/api/posts/random');
+                const response = await fetch('https://adachidb.net/api/posts/random');
                 const data = await response.json();
                 
                 // .textContent を使用することで、&amp; などの特殊文字をそのまま表示します
